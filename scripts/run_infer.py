@@ -173,11 +173,7 @@ def main():
     
     # Load Dataset
     logger.info("Loading dataset...")
-    # Use cache to speed up loading metadata
     dataset = load_all_sequences(config) 
-    # Note: load_all_sequences uses URFallDataset which we updated to default use_cache=True, 
-    # but load_all_sequences helper might need update if we want to be explicit.
-    # Let's rely on the default we just set in urfall_loader.py: load_all(..., use_cache=True)
     sequences = dataset.all_sequences
     
     # Filter/Limit
