@@ -116,11 +116,14 @@ def evaluate_set(name: str,
         f"  F1 Score: {cls_metrics.f1:.4f}\n"
         f"  ROC AUC:  {cls_metrics.roc_auc:.4f}\n"
         f"  Specs (Sp): {specificity:.4f}\n"
+        f"  Conf Matrix: {cls_metrics.conf_matrix.tolist()} (TN, FP | FN, TP)\n"
         f"Event-level:\n"
         f"  Detected Falls (TP): {evt_metrics.tp_events}/{evt_metrics.tp_events + evt_metrics.fn_events}\n"
         f"  False Alarms (FP):   {evt_metrics.fp_events}\n"
         f"  Recall:              {evt_metrics.recall:.4f}\n"
         f"  Avg Delay:           {evt_metrics.avg_delay_seconds:.3f}s\n"
+        f"  False Alarm Rate:    {evt_metrics.false_alarm_rate_per_hour:.2f} alarms/hour\n"
+        f"  Total Duration:      {evt_metrics.total_test_duration_hours * 60:.1f} minutes\n"
     )
     logger.info(summary)
     

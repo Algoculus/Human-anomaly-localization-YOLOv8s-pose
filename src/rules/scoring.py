@@ -140,14 +140,26 @@ class FallScorer:
             components.sustained_lying_score = 0.0
 
         # ========== Adaptive Weighted Sum ==========
-        # Adjust weights based on sensor availability
+        # Adjust weights based on sensor availability and triggers
         w_drop = self.params.weight_sudden_drop
         w_prone = self.params.weight_prone
         w_impact = self.params.weight_impact
         w_sustained = self.params.weight_sustained_lying
         
-        # If no accelerometer, redistribute impact weight to prone and sustained
-        if not has_accelerometer:
+        # Kwolek & Kepski Logic: Impact triggers specific pose checks
+        # If High Impact detected, prioritize Prone Score verification
+        if components.impact_score > 0.6:
+            w_prone = 0.6  # Boost prone weight significantly
+            w_drop = 0.1   # Drop is less relevant after impact
+            w_sustained = 0.1
+            w_impact = 0.2
+            
+            # Boost prone sensitivity if impact occurred
+            if components.prone_score > 0.4:
+                components.prone_score = min(components.prone_score * 1.3, 1.0)
+                
+        # If no accelerometer, redistribute impact weight
+        elif not has_accelerometer:
             w_prone += w_impact * 0.6
             w_sustained += w_impact * 0.4
             w_impact = 0.0

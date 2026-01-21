@@ -45,6 +45,8 @@ class EventMetrics:
     recall: float
     f1: float
     avg_delay_seconds: float # Mean time from GT start to Detection
+    false_alarm_rate_per_hour: float = 0.0
+    total_test_duration_hours: float = 0.0
 
 class Evaluator:
     """
@@ -181,6 +183,18 @@ class Evaluator:
         
         avg_delay = np.mean(delays) if delays else 0.0
         
+        # Calculate Total Duration of Test Set for False Alarm Rate
+        total_duration_ms = results_df['time_ms'].max() - results_df['time_ms'].min()
+        # Sum of durations of all sequences
+        total_duration_ms = 0
+        for seq_id in unique_seqs:
+            seq_df = results_df[results_df['sequence'] == seq_id]
+            if not seq_df.empty:
+                total_duration_ms += seq_df['time_ms'].max() - seq_df['time_ms'].min()
+        
+        total_hours = total_duration_ms / (1000.0 * 3600.0)
+        false_alarm_rate = fp / total_hours if total_hours > 0 else 0.0
+        
         return EventMetrics(
             tp_events=tp,
             fp_events=fp,
@@ -188,7 +202,9 @@ class Evaluator:
             precision=prec,
             recall=rec,
             f1=f1,
-            avg_delay_seconds=avg_delay
+            avg_delay_seconds=avg_delay,
+            false_alarm_rate_per_hour=false_alarm_rate,
+            total_test_duration_hours=total_hours
         )
 
 if __name__ == "__main__":

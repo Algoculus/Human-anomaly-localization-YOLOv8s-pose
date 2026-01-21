@@ -131,9 +131,9 @@ class FallScoreConfig:
     """Configuration for fall score calculation."""
     
     # Weights for score components (must sum to 1.0)
-    # Balanced for both recall and precision
-    weight_sudden_drop: float = 0.25
-    weight_prone: float = 0.40  # Primary indicator
+    # Adjusted for Safety Priority (Higher Recall)
+    weight_sudden_drop: float = 0.23  # Slightly reduced
+    weight_prone: float = 0.42  # Increased for sensitivity
     weight_impact: float = 0.15  # Important for true falls
     weight_sustained_lying: float = 0.20
     
@@ -144,9 +144,9 @@ class FallScoreConfig:
     drop_sigmoid_k: float = 10.0  # Sigmoid steepness
     
     # Prone/lying detection (Recall-optimized)
-    orientation_threshold_deg: float = 50.0  # Lowered: detect prone earlier
-    aspect_ratio_threshold: float = 0.9  # Higher threshold: more sensitive
-    prone_sigmoid_k: float = 8.0  # Softer sigmoid for gradual transition
+    orientation_threshold_deg: float = 45.0  # Lowered: detect prone earlier/easier
+    aspect_ratio_threshold: float = 0.95  # Higher threshold: very sensitive
+    prone_sigmoid_k: float = 8.0  # Softer sigmoid
     
     # Impact detection (accelerometer)
     impact_sv_threshold: float = 1.5  # SV_total spike threshold (g)
@@ -164,13 +164,13 @@ class FallScoreConfig:
 class StateConfig:
     """Configuration for state machine."""
     
-    # State thresholds (Balanced: catch falls + reduce false alarms)
-    falling_score_threshold: float = 0.48  # Slightly lower for better frame recall
-    lying_score_threshold: float = 0.55  # Balanced
+    # State thresholds (Safety Priority: Higher Recall)
+    falling_score_threshold: float = 0.40  # Aggressive recall
+    lying_score_threshold: float = 0.45  # Aggressive recall
     
     # Alert thresholds with Hysteresis
-    fall_alert_threshold: float = 0.52  # Balanced entry threshold
-    hysteresis_exit_threshold: float = 0.38  # Exit threshold
+    fall_alert_threshold: float = 0.50  # Lowered alert threshold
+    hysteresis_exit_threshold: float = 0.35  # Harder to exit state (hysteresis)
     
     # Transition timing
     transition_window_sec: float = 2.5  # Max time between FALLING and LYING

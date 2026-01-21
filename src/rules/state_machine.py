@@ -54,11 +54,11 @@ class StateMachineContext:
         elif self.current_state == State.FALLING:
             return "Falling..."
         elif self.current_state == State.LYING_NO_FALL:
-            return "Resting/Sitting"
+            return "Lying (Resting)"
         elif self.current_state == State.OCCLUDED:
             return "Person Occluded"
         else:  # NORMAL
-            if abs(self.recent_velocity) > 3.0:
+            if abs(self.recent_velocity) > 2.0:
                 return "Walking"
             else:
                 return "Standing"
@@ -156,9 +156,9 @@ class FallStateMachine:
             if is_prone:
                 # TRANSITION REQUIREMENT: Only LYING (alert) if came from FALLING
                 # Faster entry for better frame recall
-                if context.frames_prone >= self.t_hold_frames // 3:  # Faster stillness check
+                if context.frames_prone >= self.t_hold_frames // 4:  # Very fast check
                     new_state = State.LYING
-                elif context.frames_in_state > self.fps * 0.5:  # Faster: 0.5s
+                elif context.frames_in_state > self.fps * 0.3:  # Very fast: 0.3s
                     new_state = State.LYING
                     
             elif is_score_low and context.frames_in_state > self.fps * 1.5:
@@ -171,7 +171,7 @@ class FallStateMachine:
             # Stricter exit: require BOTH low score AND not prone for longer time
             if is_score_low and not is_prone and not is_prone_strong:
                 # Require longer time standing up to confirm recovery
-                if context.frames_in_state > self.fps * 2.0:  # 2 seconds to exit
+                if context.frames_in_state > self.fps * 3.0:  # 3 seconds to exit
                     new_state = State.NORMAL
                     context.had_falling_transition = False
         
