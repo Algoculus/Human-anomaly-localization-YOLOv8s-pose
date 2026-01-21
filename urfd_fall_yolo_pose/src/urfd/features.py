@@ -135,19 +135,37 @@ def compute_frame_features(detections, keypoint_conf_thres, dy_window, history, 
             features["feature_valid"] = False
     
     # Compute dy (change in center_y), velocity, and peak
-    if len(history) >= dy_window:
-        prev_feat = history[-dy_window]
-        if prev_feat["center_y"] is not None:
-            features["dy"] = cy - prev_feat["center_y"]
+    # FIX-1: Changed dy_peak to instantaneous velocity peak (not cumulative)
+    if len(history) >= 1:
+        prev_feat = history[-1]
+        if prev_feat["center_y"] is not None and cy is not None:
+            # Instantaneous velocity: frame-to-frame change
+            dy_inst = cy - prev_feat["center_y"]
+            features["dy"] = dy_inst
             
-            # Compute average dy velocity over window
-            dy_samples = []
+            # Compute dy_peak as max instantaneous velocity in recent window
+            dy_inst_samples = []
             for i in range(1, min(dy_window + 1, len(history) + 1)):
-                if history[-i]["center_y"] is not None:
-                    dy_samples.append(cy - history[-i]["center_y"])
-            if len(dy_samples) > 0:
-                features["dy_velocity"] = np.mean(dy_samples)
-                # Peak is the max absolute dy in the window
-                features["dy_peak"] = max(abs(d) for d in dy_samples)
+                idx = -i
+                if abs(idx) <= len(history):
+                    hist_feat = history[idx]
+                    # Check if dy was already computed for this history frame
+                    if hist_feat.get("dy", 0.0) != 0.0:
+                        dy_inst_samples.append(abs(hist_feat["dy"]))
+            
+            # Add current instantaneous dy
+            dy_inst_samples.append(abs(dy_inst))
+            
+            if len(dy_inst_samples) > 0:
+                # dy_peak: maximum instantaneous velocity (not cumulative displacement)
+                features["dy_peak"] = max(dy_inst_samples)
+                # dy_velocity: average instantaneous velocity
+                features["dy_velocity"] = np.mean(dy_inst_samples)
+    
+    # Fallback for first frame or missing cy in window
+    if len(history) >= dy_window and features["dy"] == 0.0:
+        prev_feat_win = history[-dy_window]
+        if prev_feat_win["center_y"] is not None and cy is not None:
+            features["dy"] = cy - prev_feat_win["center_y"]
     
     return features

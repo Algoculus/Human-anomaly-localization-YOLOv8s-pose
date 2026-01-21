@@ -297,23 +297,38 @@ class FallStateMachine:
                 self.score_accumulator *= 0.2  # Strong suppression
                 return self.state, self.score_accumulator
             
-            # Confirmation with dy_peak gate (D: suppress slow pick-up)
+            # Confirmation with dy_peak gate (optimized for high recall)
             if lying_count >= self.config["confirm_frames"]:
-                # Apply dy_peak gate: confirm ONLY if rapid motion OR strong height drop
+                # Multiple paths to confirmation for maximum recall
                 dy_peak = features.get("dy_peak", 0.0)
                 dy_peak_thres = self.config["dy_peak_thres"]
                 height_drop_strong = self.config.get("height_drop_thres_strong", 0.3)
+                height_drop_moderate = 0.22
                 
-                # Confirm if EITHER:
-                # 1) Fast transition (dy_peak >= threshold)
-                # 2) Strong height drop (fall from standing)
-                can_confirm = (dy_peak >= dy_peak_thres) or (height_drop >= height_drop_strong)
+                # Relax dy threshold moderately when height drop present
+                effective_dy_thres = dy_peak_thres
+                if height_drop >= height_drop_moderate:
+                    effective_dy_thres *= 0.70  # Moderate relaxation for balance
+                
+                # Three-path confirmation for balanced recall+precision
+                # Path 1: Fast motion with moderate threshold
+                fast_motion = dy_peak >= effective_dy_thres
+                
+                # Path 2: Strong height drop + sustained lying
+                strong_height = (height_drop >= height_drop_strong and 
+                                lying_count >= self.config["confirm_frames"])
+                
+                # Path 3: Moderate height drop + very sustained lying (stricter)
+                moderate_height = (height_drop >= height_drop_moderate and 
+                                  lying_count >= self.config["confirm_frames"] + 3)
+                
+                can_confirm = fast_motion or strong_height or moderate_height
                 
                 if can_confirm:
                     self.state = "FALL_CONFIRMED"
                     self.fall_confirmed = True
                     self.score_accumulator = self.config["score_boost_confirmed"]
-                # else: stay in CANDIDATE (slow transition, don't confirm yet)
+                # else: stay in CANDIDATE
             elif not is_candidate and len(self.confirm_history) >= self.config["confirm_window"]:
                 # No longer candidate and window expired, go back to NORMAL
                 if lying_count < self.config["confirm_frames"] - self.config["confirm_tolerance"]:
@@ -321,8 +336,19 @@ class FallStateMachine:
                     self.candidate_history = []
         
         elif self.state == "FALL_CONFIRMED":
-            # Once confirmed, stay confirmed and keep score at 1.0
-            self.score_accumulator = 1.0
+            # FIX-4: Check for recovery (person stands up after brief fall alarm)
+            has_recovered = self._check_recovery(features)
+            
+            if has_recovered:
+                # Person recovered, cancel fall alarm
+                self.state = "NORMAL"
+                self.fall_confirmed = False
+                self.score_accumulator = 0.3  # Reset but keep some memory
+                self.candidate_history = []
+                self.confirm_history = []
+            else:
+                # Stay confirmed and keep score at 1.0
+                self.score_accumulator = 1.0
         
         # Clamp score
         self.score_accumulator = np.clip(self.score_accumulator, 0.0, 1.0)

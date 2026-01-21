@@ -100,7 +100,24 @@ def infer_sequence(seq_path, config_path):
         all_scores.append(score)
     
     # Determine sequence-level prediction
+    # FIX-4: Require sustained FALL_CONFIRMED (not just any frame)
     fall_confirmed = any(s == "FALL_CONFIRMED" for s in all_states)
+    
+    # Count consecutive FALL_CONFIRMED frames
+    if fall_confirmed:
+        max_consecutive_confirmed = 0
+        current_consecutive = 0
+        for s in all_states:
+            if s == "FALL_CONFIRMED":
+                current_consecutive += 1
+                max_consecutive_confirmed = max(max_consecutive_confirmed, current_consecutive)
+            else:
+                current_consecutive = 0
+        
+        # FIX-4: Require at least 3 consecutive frames of FALL_CONFIRMED
+        min_confirm_duration = config.get("min_confirm_duration_frames", 3)
+        fall_confirmed = max_consecutive_confirmed >= min_confirm_duration
+    
     pred_label = 1 if fall_confirmed else 0
     first_confirm_frame = -1
     if fall_confirmed:

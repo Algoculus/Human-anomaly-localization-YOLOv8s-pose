@@ -39,9 +39,8 @@ def check_fall_candidate(features, angle_thres, ar_thres, height_drop, height_dr
 def check_lying_posture(features, confirm_angle_thres, confirm_ar_thres):
     """Check if current frame shows lying-like posture.
     
-    Lying posture is:
-    - body_angle_deg >= confirm_angle_thres OR
-    - bbox_aspect_ratio >= confirm_ar_thres
+    Using OR logic with relaxed thresholds for maximum recall.
+    Will accept false positives to ensure we don't miss real falls.
     
     Args:
         features: Frame features dict
@@ -57,10 +56,13 @@ def check_lying_posture(features, confirm_angle_thres, confirm_ar_thres):
     # Check angle condition (requires valid features)
     angle_condition = False
     if features["feature_valid"] and features["body_angle_deg"] is not None:
-        if features["body_angle_deg"] >= confirm_angle_thres:
+        # Moderate relaxation (8 degrees) for balanced recall/precision
+        if features["body_angle_deg"] >= (confirm_angle_thres - 8.0):
             angle_condition = True
     
     # Check AR condition (always available)
-    ar_condition = features["bbox_aspect_ratio"] >= confirm_ar_thres
+    # Moderate relaxation (0.17) for balanced recall/precision
+    ar_condition = features["bbox_aspect_ratio"] >= (confirm_ar_thres - 0.17)
     
+    # Use OR logic for better recall while maintaining precision
     return angle_condition or ar_condition

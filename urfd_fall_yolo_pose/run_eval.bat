@@ -1,2 +1,0 @@
-cd /d "d:\Workspace for Learning\My Projects\UTH Projects\Human-anomaly-localization-YOLOv8s-pose\urfd_fall_yolo_pose"
-python scripts/eval_all.py --root "d:\Workspace for Learning\My Projects\UTH Projects\Human-anomaly-localization-YOLOv8s-pose\data\raw\UR_Fall_Detection_Dataset\data" --index "d:\Workspace for Learning\My Projects\UTH Projects\Human-anomaly-localization-YOLOv8s-pose\data\urfd_index.csv" --config configs/default.yaml --no_videos > evaluation_log.txt 2>&1
