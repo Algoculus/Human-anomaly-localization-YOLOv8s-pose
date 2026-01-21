@@ -5,16 +5,38 @@ conf_thres: 0.25
 iou_thres: 0.45
 keypoint_conf_thres: 0.5
 
+# Low-light preprocessing (for dark scenes)
+preprocess_lowlight: true
+gamma: 1.3
+clahe_clip: 2.0
+clahe_grid: 8
+
+# Primary Person Tracking
+track_iou_thres: 0.3
+track_center_dist_thres: 1.5
+track_max_missing: 8
+
+# Fallback tracking (for missing detections)
+fallback_track_max_gap: 6
+fallback_tracker_type: "kcf"
+
 # Fall Detection Rule Thresholds
 angle_thres: 58.0
 ar_thres: 1.2
 confirm_angle_thres: 48.0
 confirm_ar_thres: 1.3
 height_drop_thres: 0.22
+height_drop_thres_strong: 0.3
 
 # Dynamic Fall Detection (using dy)
-dy_fall_thres: 18.0
+dy_fall_thres: 22.0
 dy_window: 5
+dy_short_window: 3
+dy_long_window: 10
+dy_peak_thres: 25.0
+
+# Height Drop Analysis
+height_drop_short_window: 5
 
 # Temporal Smoothing Parameters (with tolerance)
 cand_enter_frames: 3
@@ -27,10 +49,42 @@ height_window: 12
 # Missing Detection Handling
 max_missing_streak: 5
 
+# Recovery Detection (suppress false positives)
+recovery_window: 15
+recovery_upright_angle_thres: 35.0
+recovery_ar_thres: 0.9
+recovery_height_recover_ratio: 0.8
+
+# Motion Settling (for sustained lying)
+motion_settle_window: 8
+settle_dy_abs_thres: 5.0
+
+# Slow Transition Gate (suppress slow lie-down)
+slow_lie_max_dy_peak: 12.0
+
 # Score Parameters
 score_decay: 0.85
 score_boost_candidate: 0.05
 score_boost_confirmed: 1.0
+
+# Temporal discriminators (for FP reduction)
+dy_short_window: 3                  # Short window for dy peak detection
+dy_long_window: 10                  # Long window for dy history
+dy_peak_thres: 20.0                 # Threshold for fast fall confirmation (px) - APPLIED
+height_drop_short_window: 5         # Short window for height drop
+
+# Recovery detection (suppress false positives)
+recovery_window: 15                 # Window to check for recovery
+recovery_upright_angle_thres: 35.0  # Angle threshold for upright posture (deg)
+recovery_ar_thres: 0.9              # AR threshold for upright posture
+recovery_height_recover_ratio: 0.8  # Height recovery ratio
+
+# Motion settling (for confirmation)
+motion_settle_window: 8             # Window to check motion settling
+settle_dy_abs_thres: 10.0           # Threshold for settled motion (px) - higher to allow falls
+
+# Slow transition gate
+slow_lie_max_dy_peak: 18.0          # Max dy peak for slow transitions (px) - higher is less restrictive
 
 # Output Settings
 output_fps: 25

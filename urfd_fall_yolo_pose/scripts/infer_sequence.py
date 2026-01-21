@@ -10,6 +10,8 @@ from src.urfd.dataset import load_sequence_frames
 from src.urfd.yolo_pose import YOLOPoseDetector
 from src.urfd.features import compute_frame_features
 from src.urfd.smoothing import FallStateMachine
+from src.urfd.tracking import PrimaryPersonTracker
+from src.urfd.fallback_tracker import FallbackTracker
 from src.urfd.overlay import create_overlay_video
 from src.urfd.utils import load_config, set_seed
 
@@ -42,7 +44,18 @@ def infer_sequence(seq_path, config_path):
         model_path=config["yolo_model"],
         imgsz=config["imgsz"],
         conf_thres=config["conf_thres"],
-        iou_thres=config["iou_thres"]
+        iou_thres=config["iou_thres"],
+        preprocess_lowlight=config.get("preprocess_lowlight", False),
+        gamma=config.get("gamma", 1.3),
+        clahe_clip=config.get("clahe_clip", 2.0),
+        clahe_grid=config.get("clahe_grid", 8)
+    )
+    
+    # Initialize trackers
+    tracker = PrimaryPersonTracker(config)
+    fallback_tracker = FallbackTracker(
+        tracker_type=config.get("fallback_tracker_type", "kcf"),
+        max_gap=config.get("fallback_track_max_gap", 6)
     )
     
     # Initialize state machine
@@ -52,20 +65,34 @@ def infer_sequence(seq_path, config_path):
     all_features = []
     all_states = []
     all_scores = []
+    primary_indices = []
     
     for idx, frame in enumerate(frames):
         # Run YOLO pose detection
         detections = detector.detect(frame)
         
-        # Compute features
+        # Apply fallback tracker if YOLO missed
+        fallback_det = fallback_tracker.update(frame, detections)
+        if fallback_det is not None:
+            detections = [fallback_det]
+        
+        # Initialize fallback tracker when we have valid primary detection
+        if len(detections) > 0 and fallback_det is None:
+            if tracker.track_state is not None and tracker.track_state["bbox"] is not None:
+                fallback_tracker.initialize(frame, tracker.track_state["bbox"])
+        
+        # Compute features with tracking
         features = compute_frame_features(
             detections,
             config["keypoint_conf_thres"],
             config["dy_window"],
-            all_features
+            all_features,
+            tracker=tracker,
+            frame_idx=idx
         )
         
         all_features.append(features)
+        primary_indices.append(features["primary_person_idx"])
         
         # Update state machine
         state, score = state_machine.update(features)
@@ -97,7 +124,8 @@ def infer_sequence(seq_path, config_path):
         all_states,
         all_scores,
         output_path,
-        config["output_fps"]
+        config["output_fps"],
+        primary_indices=primary_indices
     )
     
     print(f"Done! Video saved to {output_path}")

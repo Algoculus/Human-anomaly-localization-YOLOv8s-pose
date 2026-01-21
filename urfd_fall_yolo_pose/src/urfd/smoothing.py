@@ -30,6 +30,11 @@ class FallStateMachine:
         # Score tracking
         self.score_accumulator = 0.0
         self.fall_confirmed = False
+        
+        # Temporal discriminator tracking
+        self.recovery_history = []  # Track upright recovery after lying
+        self.dy_peak_history = []   # Track dy peaks for slow transition detection
+        self.motion_settled = False  # Flag for settled motion after lying
     
     def _compute_height_drop(self, current_height):
         """Compute normalized height drop.
@@ -105,6 +110,109 @@ class FallStateMachine:
         
         return np.clip(score, 0.0, 1.0)
     
+    def _check_slow_transition(self, features):
+        """Check if current lying posture is from slow transition (not a fall).
+        
+        Slow transitions (e.g., lie down to sleep) have lower dy_peak values.
+        
+        Args:
+            features: Current frame features
+        
+        Returns:
+            is_slow: True if transition appears slow
+        """
+        dy_peak_thres = self.config["dy_peak_thres"]
+        slow_lie_max_dy_peak = self.config["slow_lie_max_dy_peak"]
+        
+        # Add current dy_peak to history
+        self.dy_peak_history.append(features["dy_peak"])
+        dy_long_window = self.config["dy_long_window"]
+        if len(self.dy_peak_history) > dy_long_window:
+            self.dy_peak_history.pop(0)
+        
+        # Check peak dy over recent window
+        if len(self.dy_peak_history) >= self.config["dy_short_window"]:
+            max_dy_peak = max(self.dy_peak_history[-self.config["dy_short_window"]:])
+            # If peak is below slow threshold, it's a slow transition
+            return max_dy_peak < slow_lie_max_dy_peak
+        
+        return False
+    
+    def _check_recovery(self, features):
+        """Check if person has recovered from lying (false positive suppression).
+        
+        If person briefly lies down then returns upright, it's likely not a fall.
+        Works with both keypoint-based and bbox-only detection.
+        
+        Args:
+            features: Current frame features
+        
+        Returns:
+            recovered: True if recovery detected
+        """
+        recovery_window = self.config["recovery_window"]
+        recovery_upright_angle_thres = self.config["recovery_upright_angle_thres"]
+        recovery_ar_thres = self.config["recovery_ar_thres"]
+        recovery_height_recover_ratio = self.config["recovery_height_recover_ratio"]
+        
+        # Check if currently upright (bbox-only version for fallback compatibility)
+        # Upright if: angle < threshold (if available) OR (AR < threshold AND height recovered)
+        is_upright_keypoint = (
+            features["body_angle_deg"] is not None and
+            features["body_angle_deg"] < recovery_upright_angle_thres
+        )
+        
+        is_upright_bbox = (
+            features["bbox_aspect_ratio"] is not None and
+            features["bbox_aspect_ratio"] < recovery_ar_thres
+        )
+        
+        # Accept either keypoint or bbox evidence
+        is_upright = is_upright_keypoint or is_upright_bbox
+        
+        # Track recovery history
+        self.recovery_history.append(1 if is_upright else 0)
+        if len(self.recovery_history) > recovery_window:
+            self.recovery_history.pop(0)
+        
+        # Check if height has recovered (returned to baseline)
+        height_recovered = False
+        if len(self.height_history) >= recovery_window:
+            recent_max_height = max(self.height_history[-recovery_window:])
+            baseline_height = np.median(self.height_history[:min(30, len(self.height_history))])
+            if baseline_height > 0:
+                height_recovered = (recent_max_height / baseline_height) > recovery_height_recover_ratio
+        
+        # Recovery: sustained upright posture + height recovery
+        if len(self.recovery_history) >= recovery_window // 2:
+            upright_count = sum(self.recovery_history[-recovery_window // 2:])
+            if upright_count >= recovery_window // 3 and height_recovered:
+                return True
+        
+        return False
+    
+    def _check_motion_settled(self, features):
+        """Check if motion has settled after lying down.
+        
+        True falls have rapid motion that settles. Slow transitions have minimal motion.
+        
+        Args:
+            features: Current frame features
+        
+        Returns:
+            settled: True if motion appears settled
+        """
+        motion_settle_window = self.config["motion_settle_window"]
+        settle_dy_abs_thres = self.config["settle_dy_abs_thres"]
+        
+        # Check if recent dy values are small (settled)
+        if len(self.dy_peak_history) >= motion_settle_window:
+            recent_dy_peaks = self.dy_peak_history[-motion_settle_window:]
+            avg_recent_dy = np.mean(recent_dy_peaks)
+            return avg_recent_dy < settle_dy_abs_thres
+        
+        return False
+    
     def update(self, features):
         """Update state machine with new frame features.
         
@@ -177,10 +285,35 @@ class FallStateMachine:
             
             # Check if enough lying frames in window
             lying_count = sum(self.confirm_history)
+            
+            # Temporal discriminator: Recovery detection
+            has_recovered = self._check_recovery(features)
+            
+            # Priority: Recovery gate (strong evidence of NOT a fall)
+            if has_recovered:
+                # Person recovered upright after lying, clearly not a fall
+                self.state = "NORMAL"
+                self.candidate_history = []
+                self.score_accumulator *= 0.2  # Strong suppression
+                return self.state, self.score_accumulator
+            
+            # Confirmation with dy_peak gate (D: suppress slow pick-up)
             if lying_count >= self.config["confirm_frames"]:
-                self.state = "FALL_CONFIRMED"
-                self.fall_confirmed = True
-                self.score_accumulator = self.config["score_boost_confirmed"]
+                # Apply dy_peak gate: confirm ONLY if rapid motion OR strong height drop
+                dy_peak = features.get("dy_peak", 0.0)
+                dy_peak_thres = self.config["dy_peak_thres"]
+                height_drop_strong = self.config.get("height_drop_thres_strong", 0.3)
+                
+                # Confirm if EITHER:
+                # 1) Fast transition (dy_peak >= threshold)
+                # 2) Strong height drop (fall from standing)
+                can_confirm = (dy_peak >= dy_peak_thres) or (height_drop >= height_drop_strong)
+                
+                if can_confirm:
+                    self.state = "FALL_CONFIRMED"
+                    self.fall_confirmed = True
+                    self.score_accumulator = self.config["score_boost_confirmed"]
+                # else: stay in CANDIDATE (slow transition, don't confirm yet)
             elif not is_candidate and len(self.confirm_history) >= self.config["confirm_window"]:
                 # No longer candidate and window expired, go back to NORMAL
                 if lying_count < self.config["confirm_frames"] - self.config["confirm_tolerance"]:

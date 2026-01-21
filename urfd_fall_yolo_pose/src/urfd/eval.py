@@ -76,9 +76,11 @@ def plot_confusion_matrix(metrics, output_path):
     import seaborn as sns
     
     cm = metrics["confusion_matrix"]
+    # Correct matrix layout: [[TP, FN], [FP, TN]]
+    # Rows: Actual (Fall, ADL), Columns: Predicted (Fall, ADL)
     matrix = np.array([
-        [cm["TP"], cm["FP"]],
-        [cm["FN"], cm["TN"]]
+        [cm["TP"], cm["FN"]],
+        [cm["FP"], cm["TN"]]
     ])
     
     plt.figure(figsize=(8, 6))

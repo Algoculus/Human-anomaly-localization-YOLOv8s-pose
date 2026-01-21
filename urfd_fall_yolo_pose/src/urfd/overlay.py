@@ -40,7 +40,7 @@ def draw_skeleton(img, keypoints, color, conf_thres=0.5):
                 pt2 = (int(kp2[0]), int(kp2[1]))
                 cv2.line(img, pt1, pt2, color, 2)
 
-def create_overlay_video(frames, detections_list, states, scores, output_path, fps):
+def create_overlay_video(frames, detections_list, states, scores, output_path, fps, primary_indices=None):
     """Create overlay video with detection results.
     
     Args:
@@ -50,6 +50,7 @@ def create_overlay_video(frames, detections_list, states, scores, output_path, f
         scores: List of fall scores per frame
         output_path: Output video path
         fps: Output video FPS
+        primary_indices: List of primary person indices per frame (optional)
     """
     if len(frames) == 0:
         return
@@ -73,19 +74,25 @@ def create_overlay_video(frames, detections_list, states, scores, output_path, f
         else:  # FALL_CONFIRMED
             color = COLOR_FALL
         
-        # Find primary person
+        # Find primary person (use tracking index if available, else largest bbox)
         if len(detections) > 0:
-            primary_idx = max(range(len(detections)), key=lambda i: detections[i]["bbox_area"])
-            det = detections[primary_idx]
+            if primary_indices is not None and idx < len(primary_indices) and primary_indices[idx] >= 0:
+                primary_idx = primary_indices[idx]
+            else:
+                primary_idx = max(range(len(detections)), key=lambda i: detections[i]["bbox_area"])
             
-            # Draw bbox
-            bbox = det["bbox"]
-            x1, y1, x2, y2 = map(int, bbox)
-            cv2.rectangle(overlay, (x1, y1), (x2, y2), color, 2)
-            
-            # Draw skeleton
-            keypoints = det["keypoints"]
-            draw_skeleton(overlay, keypoints, color)
+            if primary_idx < len(detections):
+                det = detections[primary_idx]
+                
+                # Draw bbox
+                bbox = det["bbox"]
+                x1, y1, x2, y2 = map(int, bbox)
+                cv2.rectangle(overlay, (x1, y1), (x2, y2), color, 2)
+                
+                # Draw skeleton (if keypoints available)
+                keypoints = det.get("keypoints")
+                if keypoints is not None:
+                    draw_skeleton(overlay, keypoints, color)
         
         # Draw state text
         cv2.putText(overlay, f"State: {state}", (10, 30),
