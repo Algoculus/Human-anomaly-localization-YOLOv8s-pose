@@ -1,0 +1,78 @@
+# YOLOv8 Pose Model Configuration
+yolo_model: "yolov8s-pose.pt"
+imgsz: 640
+conf_thres: 0.25
+iou_thres: 0.45
+keypoint_conf_thres: 0.5
+
+# Low-light preprocessing (for dark scenes)
+preprocess_lowlight: true
+gamma: 1.3
+clahe_clip: 2.0
+clahe_grid: 8
+
+# Primary Person Tracking
+track_iou_thres: 0.3
+track_center_dist_thres: 1.5
+track_max_missing: 8
+
+# Fallback tracking (for missing detections)
+fallback_track_max_gap: 6
+fallback_tracker_type: "kcf"
+
+# Fall Detection Rule Thresholds
+angle_thres: 58.0
+ar_thres: 1.2
+confirm_angle_thres: 48.0
+confirm_ar_thres: 1.3
+height_drop_thres: 0.22
+height_drop_thres_strong: 0.3
+
+# Dynamic Fall Detection (using dy)
+dy_fall_thres: 18.0
+dy_window: 5
+dy_short_window: 3 # Short window for dy peak detection
+dy_long_window: 10 # Long window for dy history
+dy_peak_thres: 16.5 # Threshold for fast fall confirmation (px) - TUNED for all metrics >= 0.85
+
+# Height Drop Analysis
+height_drop_short_window: 5 # Short window for height drop
+
+# Temporal Smoothing Parameters (with tolerance)
+cand_enter_frames: 2
+cand_tolerance: 1
+confirm_frames: 5
+confirm_tolerance: 2
+confirm_window: 10
+height_window: 12
+
+# Missing Detection Handling
+max_missing_streak: 5
+
+# Recovery Detection (suppress false positives)
+recovery_window: 10 # Window to check for recovery (reduced for faster response)
+recovery_upright_angle_thres: 45.0 # Angle threshold for upright posture (deg) - more lenient
+recovery_ar_thres: 1.0 # AR threshold for upright posture - more lenient
+recovery_height_recover_ratio: 0.75 # Height recovery ratio - easier to trigger
+
+# Motion Settling (for sustained lying)
+motion_settle_window: 8 # Window to check motion settling
+settle_dy_abs_thres: 10.0 # Threshold for settled motion (px) - higher to allow falls
+
+# Slow Transition Gate (suppress slow lie-down)
+slow_lie_max_dy_peak: 18.0 # Max dy peak for slow transitions (px) - higher is less restrictive
+
+# Score Parameters
+score_decay: 0.85
+score_boost_candidate: 0.05
+score_boost_confirmed: 1.0
+
+# FIX-4: Minimum consecutive FALL_CONFIRMED frames for sequence-level decision
+min_confirm_duration_frames: 3
+
+# Output Settings
+output_fps: 25
+output_dir: "outputs"
+
+# Reproducibility
+seed: 42
