@@ -55,6 +55,56 @@ python src/infer.py --weights weights/best.pt --source 0
 ```
 - Luồng: nhận keypoints → tính feature (center of mass, angle giữa thân/chân, tốc độ keypoint) → áp bộ quy tắc / model phụ để phát hiện ngã → hiển thị bounding + cảnh báo.
 
+## Demo nhanh (YOLOv8-Pose + FSM + Safe Zone + Multi-Person Tracking)
+
+**Tính năng:**
+- ✅ **Multi-person detection**: Phát hiện nhiều người cùng lúc
+- ✅ **Tracking (ByteTrack)**: Mỗi người có ID ổn định theo thời gian
+- ✅ **FSM riêng cho từng người**: Người A ngã, người B đứng vẫn bình thường
+- ✅ **Safe Zone**: Loại bỏ false alarm khi nằm ngủ/ghế sofa
+
+Cài thư viện:
+```
+pip install -r requirements.txt
+```
+
+Test YOLO pose webcam (tuỳ chọn):
+```
+yolo pose predict model=yolov8n-pose.pt source=0 show=True
+```
+
+Chạy demo FSM với tracking (webcam):
+```
+python src/urfall_demo_fsm.py --source 0 --model yolov8n-pose.pt
+```
+
+Chạy demo FSM (video UR Fall):
+```
+python src/urfall_demo_fsm.py --source data/UR_Fall_Detection_Dataset/data/fall-01-cam0.mp4 --model yolov8n-pose.pt
+```
+
+Phím tắt:
+- `z`: vẽ lại Safe Zone (kéo chuột trái để chọn hình chữ nhật)
+- `s`: lưu Safe Zone vào `outputs/safe_zone.json`
+- `q`: thoát
+
+**Output:**
+- Mỗi người có bbox màu riêng (theo track ID)
+- Label theo từng người: `ID:X FALL DETECTED`, `ID:X LYING`, `ID:X INACTIVITY`, `ID:X NORMAL`, `ID:X SAFE ZONE (SLEEP/REST)`
+- FSM tự động cleanup khi người rời khỏi frame (sau 30 frames không thấy)
+
+## Đánh giá nhanh trên UR Fall (event-level)
+
+Vì trong bản dataset đang có ở máy bạn **chưa thấy** các file frame-level GT như `urfall-cam0-falls.csv`/`urfall-cam0-adls.csv`, script dưới đây đánh giá **event-level theo clip** (fall-*.mp4 là 1, adl-*.mp4 là 0):
+```
+python src/urfall_eval_event.py --data-dir data/UR_Fall_Detection_Dataset/data --model yolov8n-pose.pt
+```
+
+Script sẽ xuất:
+- Confusion matrix (TP/FP/TN/FN)
+- Recall, Specificity, Precision, F1
+- CSV dự đoán theo video ở `outputs/urfall_event_metrics.csv`
+
 ## Đánh giá
 - Metrics: Precision, Recall, F1-score, AUC cho phân loại frame/segment; mAP cho pose nếu có ground-truth.
 - Thực nghiệm: báo cáo trên từng video; báo lỗi false positive/negative.
