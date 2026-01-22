@@ -26,25 +26,25 @@ export default function ReceiverPage() {
   const [isConnected, setIsConnected] = useState(false)
   const [deviceId] = useState(`receiver-${Date.now()}`)
   const [alarms, setAlarms] = useState<AlarmData[]>([])
-  
+
   const wsRef = useRef<WebSocket | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   useEffect(() => {
     // Create alarm audio
     audioRef.current = new Audio('/alarm.mp3')
-    
+
     return () => {
       disconnect()
     }
   }, [])
 
   const connect = () => {
-    const ws = new WebSocket(`ws://localhost:9000/ws`)
-    
+    const ws = new WebSocket(`ws://localhost:4611/ws`)
+
     ws.onopen = () => {
       console.log('WebSocket connected')
-      
+
       // Register as receiver
       ws.send(JSON.stringify({
         type: 'register',
@@ -54,7 +54,7 @@ export default function ReceiverPage() {
       }))
 
       setIsConnected(true)
-      
+
       toast({
         title: '✅ Connected',
         description: `Monitoring room: ${FIXED_ROOM_ID}`,
@@ -63,7 +63,7 @@ export default function ReceiverPage() {
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data)
-      
+
       if (data.type === 'alarm') {
         handleAlarm(data)
       } else if (data.type === 'error') {
@@ -103,12 +103,12 @@ export default function ReceiverPage() {
   const handleAlarm = (data: AlarmData) => {
     // Add to alarms list
     setAlarms(prev => [data, ...prev].slice(0, 20)) // Keep last 20
-    
+
     // Play alarm sound
     if (audioRef.current) {
       audioRef.current.play().catch(e => console.error('Audio play failed:', e))
     }
-    
+
     // Show toast notification
     toast({
       title: '🚨 FALL DETECTED!',
@@ -156,11 +156,11 @@ export default function ReceiverPage() {
               <p className="text-sm text-gray-400">Monitor fall alerts in real-time</p>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-3 w-full md:w-auto">
             {alarms.length > 0 && (
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={clearAlarms}
                 className="flex-1 md:flex-none"
               >
@@ -168,15 +168,15 @@ export default function ReceiverPage() {
               </Button>
             )}
             {isConnected ? (
-              <Button 
-                variant="destructive" 
+              <Button
+                variant="destructive"
                 onClick={disconnect}
                 className="flex-1 md:flex-none shadow-lg hover:shadow-xl transition-all duration-300"
               >
                 Disconnect
               </Button>
             ) : (
-              <Button 
+              <Button
                 onClick={connect}
                 className="flex-1 md:flex-none bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 shadow-lg hover:shadow-xl transition-all duration-300"
               >
@@ -202,8 +202,8 @@ export default function ReceiverPage() {
                 </div>
                 <div>
                   <Label className="text-gray-300">Device ID</Label>
-                  <Input 
-                    value={deviceId} 
+                  <Input
+                    value={deviceId}
                     disabled
                     className="font-mono text-sm bg-gray-900/50 border-gray-700 text-gray-300"
                   />
@@ -225,7 +225,7 @@ export default function ReceiverPage() {
                       </Badge>
                     )}
                   </div>
-                  
+
                   <div className="flex items-center justify-between p-3 bg-gray-900/50 rounded-lg border border-gray-700">
                     <Label className="text-sm flex items-center gap-2 text-gray-300">
                       <AlertTriangle className="w-4 h-4" />
@@ -267,16 +267,16 @@ export default function ReceiverPage() {
                     </div>
                     <p className="text-lg font-medium text-gray-300">No alarms received yet</p>
                     <p className="text-sm mt-2 text-gray-500">
-                      {isConnected 
-                        ? 'Listening for fall detections...' 
+                      {isConnected
+                        ? 'Listening for fall detections...'
                         : 'Click "Connect" to start monitoring'}
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     {alarms.map((alarm, idx) => (
-                      <div 
-                        key={idx} 
+                      <div
+                        key={idx}
                         className="p-4 border-2 border-red-700 rounded-lg bg-gradient-to-r from-red-950/40 to-orange-950/40 hover:border-red-600 transition-all duration-300 animate-in slide-in-from-bottom shadow-lg hover:shadow-xl"
                         style={{ animationDelay: `${idx * 50}ms` }}
                       >
@@ -293,23 +293,23 @@ export default function ReceiverPage() {
                             {formatTime(alarm.ts)}
                           </span>
                         </div>
-                        
+
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                           <div className="p-2 bg-gray-900/50 rounded border border-gray-700">
                             <span className="text-gray-400 text-xs block mb-1">Camera ID</span>
                             <span className="font-mono text-gray-200">{alarm.deviceId ? alarm.deviceId.split('-').pop() : 'unknown'}</span>
                           </div>
-                          
+
                           <div className="p-2 bg-gray-900/50 rounded border border-gray-700">
                             <span className="text-gray-400 text-xs block mb-1">State</span>
                             <span className="font-bold text-red-400">{alarm.state}</span>
                           </div>
-                          
+
                           <div className="p-2 bg-gray-900/50 rounded border border-gray-700">
                             <span className="text-gray-400 text-xs block mb-1">Confidence</span>
                             <span className="font-bold text-red-400">{(alarm.score * 100).toFixed(1)}%</span>
                           </div>
-                          
+
                           <div className="p-2 bg-gray-900/50 rounded border border-gray-700">
                             <span className="text-gray-400 text-xs block mb-1">Timestamp</span>
                             <span className="text-gray-200">{new Date(alarm.ts).toLocaleTimeString()}</span>

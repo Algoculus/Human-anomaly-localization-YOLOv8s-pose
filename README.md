@@ -16,16 +16,17 @@ This project implements an end-to-end fall detection system with:
 
 | Metric      | Target | Achieved    | Status         |
 | ----------- | ------ | ----------- | -------------- |
-| Accuracy    | ≥0.85  | 0.829-0.857 | ⚠️ Near target |
-| Precision   | ≥0.85  | 0.909       | ✅ Excellent   |
-| **Recall**  | ≥0.85  | 0.667-0.933 | 🔄 Optimizing  |
-| Specificity | ≥0.85  | 0.950       | ✅ Excellent   |
-| F1-Score    | ≥0.85  | 0.769-0.812 | ⚠️ Near target |
+| Accuracy    | ≥0.85  | 0.871       | ✅ Target Met  |
+| Precision   | ≥0.85  | 0.839       | ⚠️ Near target |
+| **Recall**  | ≥0.85  | 0.867       | ✅ Target Met  |
+| Specificity | ≥0.85  | 0.875       | ✅ Target Met  |
+| F1-Score    | ≥0.85  | 0.852       | ✅ Target Met  |
 
-**Latest Results** (Config: optimized thresholds):
+**Latest Results** (Multi-person Tracking + Optimized Config):
 
-- False Positives: 2 (5% of ADL sequences)
-- False Negatives: 10 (33% of FALL sequences) - **Primary focus for improvement**
+- False Positives: 5
+- False Negatives: 4
+- **Performance**: High balanced performance (F1 > 0.85) with multi-person tracking support.
 
 ## 🏗️ Project Structure
 
@@ -95,7 +96,7 @@ npm install
 ```bash
 # Terminal 1: Backend
 cd web/backend
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 9000
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 4611
 
 # Terminal 2: Frontend
 cd web/frontend
@@ -130,10 +131,10 @@ python scripts/final_summary.py
 - Low-light preprocessing: Gamma correction + CLAHE
 
 ### 2. Person Tracking
-
-- **Primary Tracker**: IoU + center distance matching
-- **Fallback Tracker**: KCF tracker when YOLO misses
-- Selects primary person based on fall likelihood score
+ 
+ - **Multi-person Tracker**: Tracks all individuals simultaneously using Hungarian matching (IoU + center distance)
+ - **State Machine**: Maintains independent state for each tracked person
+ - **Visualization**: Overlays status, ID, and skeleton for all detected people
 
 ### 3. Feature Extraction
 

@@ -15,15 +15,7 @@ COLOR_CANDIDATE = (0, 165, 255)  # Orange
 COLOR_FALL = (0, 0, 255)         # Red
 
 def draw_skeleton(img, keypoints, color, conf_thres=0.5):
-    """Draw skeleton on image.
-    
-    Args:
-        img: Image to draw on
-        keypoints: Keypoints array (17, 3)
-        color: Color tuple (B, G, R)
-        conf_thres: Confidence threshold for drawing
-    """
-    # Draw keypoints
+    # Draw skeleton on image.
     for i, kp in enumerate(keypoints):
         x, y, conf = kp
         if conf >= conf_thres:
@@ -40,18 +32,14 @@ def draw_skeleton(img, keypoints, color, conf_thres=0.5):
                 pt2 = (int(kp2[0]), int(kp2[1]))
                 cv2.line(img, pt1, pt2, color, 2)
 
-def create_overlay_video(frames, detections_list, states, scores, output_path, fps, primary_indices=None):
-    """Create overlay video with detection results.
+def create_overlay_video(frames, all_tracks_data, output_path, fps):
+    # Create overlay video with detection results for multiple tracks.
+    # Args:
+    #   frames: List of BGR images
+    #   all_tracks_data: List (per frame) of Dict (track_id -> {bbox, keypoints, state, score})
+    #   output_path: Output video path
+    #   fps: Output video FPS
     
-    Args:
-        frames: List of BGR images
-        detections_list: List of detection lists per frame
-        states: List of state strings per frame
-        scores: List of fall scores per frame
-        output_path: Output video path
-        fps: Output video FPS
-        primary_indices: List of primary person indices per frame (optional)
-    """
     if len(frames) == 0:
         return
     
@@ -62,43 +50,34 @@ def create_overlay_video(frames, detections_list, states, scores, output_path, f
     for idx, frame in enumerate(frames):
         overlay = frame.copy()
         
-        detections = detections_list[idx]
-        state = states[idx]
-        score = scores[idx]
+        frame_tracks = all_tracks_data[idx] if idx < len(all_tracks_data) else {}
         
-        # Determine color based on state
-        if state == "NORMAL":
-            color = COLOR_NORMAL
-        elif state == "CANDIDATE":
-            color = COLOR_CANDIDATE
-        else:  # FALL_CONFIRMED
-            color = COLOR_FALL
-        
-        # Find primary person (use tracking index if available, else largest bbox)
-        if len(detections) > 0:
-            if primary_indices is not None and idx < len(primary_indices) and primary_indices[idx] >= 0:
-                primary_idx = primary_indices[idx]
-            else:
-                primary_idx = max(range(len(detections)), key=lambda i: detections[i]["bbox_area"])
+        for tid, track_info in frame_tracks.items():
+            state = track_info.get("state", "NORMAL")
+            score = track_info.get("score", 0.0)
             
-            if primary_idx < len(detections):
-                det = detections[primary_idx]
-                
-                # Draw bbox
-                bbox = det["bbox"]
+            # Determine color based on state
+            if state == "NORMAL":
+                color = COLOR_NORMAL
+            elif state == "CANDIDATE":
+                color = COLOR_CANDIDATE
+            else:  # FALL_CONFIRMED (or FALL)
+                color = COLOR_FALL
+            
+            # Draw bbox
+            if "bbox" in track_info and track_info["bbox"] is not None:
+                bbox = track_info["bbox"]
                 x1, y1, x2, y2 = map(int, bbox)
                 cv2.rectangle(overlay, (x1, y1), (x2, y2), color, 2)
                 
-                # Draw skeleton (if keypoints available)
-                keypoints = det.get("keypoints")
-                if keypoints is not None:
-                    draw_skeleton(overlay, keypoints, color)
-        
-        # Draw state text
-        cv2.putText(overlay, f"State: {state}", (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
-        cv2.putText(overlay, f"Score: {score:.3f}", (10, 70),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
+                # Draw ID and State
+                label = f"ID:{tid} {state} {score:.2f}"
+                cv2.putText(overlay, label, (x1, max(0, y1 - 10)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+            
+            # Draw skeleton
+            if "keypoints" in track_info and track_info["keypoints"] is not None:
+                draw_skeleton(overlay, track_info["keypoints"], color)
         
         writer.write(overlay)
     

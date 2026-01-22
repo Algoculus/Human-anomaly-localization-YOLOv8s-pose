@@ -6,36 +6,18 @@ KEYPOINT_RIGHT_SHOULDER = 6
 KEYPOINT_LEFT_HIP = 11
 KEYPOINT_RIGHT_HIP = 12
 
-def compute_frame_features(detections, keypoint_conf_thres, dy_window, history, tracker=None, frame_idx=0):
-    """Compute features for a single frame.
+def compute_frame_features(detection, keypoint_conf_thres, dy_window, history, track_id=-1, frame_idx=0):
+    # Compute features for a single track/detection
+    # Args:
+    #     detection: Standard detection dict (bbox, keypoints, etc.)
+    #     keypoint_conf_thres: Minimum confidence for keypoints
+    #     dy_window: Number of frames to look back for dy computation
+    #     history: List of previous frame features for THIS track
+    #     track_id: ID of the person track
+    #     frame_idx: Current frame index
     
-    Args:
-        detections: List of person detections from YOLO
-        keypoint_conf_thres: Minimum confidence for keypoints
-        dy_window: Number of frames to look back for dy computation
-        history: List of previous frame features
-        tracker: PrimaryPersonTracker instance (optional)
-        frame_idx: Current frame index
-    
-    Returns:
-        features: Dict containing:
-            - primary_person_idx: index of primary person (-1 if none)
-            - bbox: [x1, y1, x2, y2] of primary person
-            - center_y: bbox center y
-            - height: bbox height
-            - width: bbox width
-            - bbox_aspect_ratio: width / height
-            - shoulder_mid: [x, y] or None
-            - hip_mid: [x, y] or None
-            - body_angle_deg: angle in degrees or None
-            - feature_valid: bool, True if keypoints are reliable
-            - dy: change in center_y over last dy_window frames
-            - dy_velocity: average dy over window
-            - dy_peak: max dy in recent window
-            - detections: original detections for overlay
-    """
     features = {
-        "primary_person_idx": -1,
+        "track_id": track_id,
         "bbox": None,
         "center_y": None,
         "height": None,
@@ -48,31 +30,17 @@ def compute_frame_features(detections, keypoint_conf_thres, dy_window, history, 
         "dy": 0.0,
         "dy_velocity": 0.0,
         "dy_peak": 0.0,
-        "detections": detections
+        "detection": detection 
     }
     
-    if len(detections) == 0:
+    if detection is None:
         return features
-    
-    # Select primary person using tracker if available
-    if tracker is not None:
-        primary_idx = tracker.update(detections, keypoint_conf_thres, frame_idx)
-    else:
-        # Fallback: largest bbox area
-        primary_idx = max(range(len(detections)), key=lambda i: detections[i]["bbox_area"])
-    
-    if primary_idx < 0:
-        # Tracker says missing but within tolerance
-        return features
-    
-    features["primary_person_idx"] = primary_idx
-    
-    det = detections[primary_idx]
-    bbox = det["bbox"]
-    keypoints = det["keypoints"]
+        
+    bbox = detection["bbox"]
+    keypoints = detection["keypoints"]
     
     # Check if this is a fallback detection (no keypoints)
-    is_fallback = det.get("is_fallback", False)
+    is_fallback = detection.get("is_fallback", False)
     
     x1, y1, x2, y2 = bbox
     cx = (x1 + x2) / 2

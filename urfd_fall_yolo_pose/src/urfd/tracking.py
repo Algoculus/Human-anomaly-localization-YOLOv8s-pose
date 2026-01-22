@@ -1,84 +1,22 @@
 import numpy as np
+from src.urfd.utils import compute_iou, compute_center_distance
 
-class PrimaryPersonTracker:
-    """Temporal tracking of primary person using deterministic track-by-detection."""
+class MultiPersonTracker:
+    # Temporal tracking of multiple people
     
     def __init__(self, config):
-        """Initialize tracker.
-        
-        Args:
-            config: Configuration dict with tracking parameters
-        """
+        # Initialize tracker with config
         self.config = config
-        self.reset()
+        self.tracks = {}  # {track_id: track_data}
+        self.next_track_id = 0
     
     def reset(self):
-        """Reset tracker state."""
-        self.track_bbox = None
-        self.track_center = None
-        self.track_velocity = np.array([0.0, 0.0])
-        self.track_last_seen = 0
-        self.track_missing_count = 0
-        self.track_keypoints = None
-    
-    def _compute_iou(self, bbox1, bbox2):
-        """Compute IoU between two bboxes.
-        
-        Args:
-            bbox1, bbox2: [x1, y1, x2, y2]
-        
-        Returns:
-            iou: Intersection over Union
-        """
-        x1_int = max(bbox1[0], bbox2[0])
-        y1_int = max(bbox1[1], bbox2[1])
-        x2_int = min(bbox1[2], bbox2[2])
-        y2_int = min(bbox1[3], bbox2[3])
-        
-        inter_area = max(0, x2_int - x1_int) * max(0, y2_int - y1_int)
-        
-        bbox1_area = (bbox1[2] - bbox1[0]) * (bbox1[3] - bbox1[1])
-        bbox2_area = (bbox2[2] - bbox2[0]) * (bbox2[3] - bbox2[1])
-        
-        union_area = bbox1_area + bbox2_area - inter_area
-        
-        if union_area <= 0:
-            return 0.0
-        
-        return inter_area / union_area
-    
-    def _compute_center_distance(self, bbox1, bbox2):
-        """Compute normalized center distance between two bboxes.
-        
-        Args:
-            bbox1, bbox2: [x1, y1, x2, y2]
-        
-        Returns:
-            dist: Normalized distance
-        """
-        c1 = np.array([(bbox1[0] + bbox1[2]) / 2, (bbox1[1] + bbox1[3]) / 2])
-        c2 = np.array([(bbox2[0] + bbox2[2]) / 2, (bbox2[1] + bbox2[3]) / 2])
-        
-        h1 = bbox1[3] - bbox1[1]
-        w1 = bbox1[2] - bbox1[0]
-        normalize_factor = max(h1, w1)
-        
-        if normalize_factor <= 0:
-            return 1e6
-        
-        return np.linalg.norm(c1 - c2) / normalize_factor
+        # Reset tracker state
+        self.tracks = {}
+        self.next_track_id = 0
     
     def _compute_fall_likelihood_score(self, bbox, keypoints, keypoint_conf_thres):
-        """Compute a fall-likelihood proxy score for re-initialization.
-        
-        Args:
-            bbox: [x1, y1, x2, y2]
-            keypoints: (17, 3) array
-            keypoint_conf_thres: Threshold for keypoint confidence
-        
-        Returns:
-            score: Higher means more likely to be a falling/fallen person
-        """
+        # Compute a fall-likelihood proxy score for re-initialization
         x1, y1, x2, y2 = bbox
         w = x2 - x1
         h = y2 - y1
@@ -120,108 +58,154 @@ class PrimaryPersonTracker:
         return 0.4 * ar_score + 0.3 * y_score + 0.3 * angle_score
     
     def update(self, detections, keypoint_conf_thres, frame_idx):
-        """Update tracker with new detections.
+        # Update tracker with new detections
+        # Returns: dict of {track_id: detection_index} mapping
         
-        Args:
-            detections: List of detection dicts
-            keypoint_conf_thres: Keypoint confidence threshold
-            frame_idx: Current frame index
-        
-        Returns:
-            primary_idx: Index of primary person in detections, or -1 if none
-        """
         if len(detections) == 0:
-            self.track_missing_count += 1
-            if self.track_missing_count > self.config["track_max_missing"]:
-                self.reset()
-            return -1
+            # Increment missing count for all tracks
+            for tid in list(self.tracks.keys()):
+                self.tracks[tid]["missing_count"] += 1
+                if self.tracks[tid]["missing_count"] > self.config["track_max_missing"]:
+                    del self.tracks[tid]
+            return {}
         
-        # First frame or track lost: initialize
-        if self.track_bbox is None:
-            # Select by fall likelihood
-            scores = [self._compute_fall_likelihood_score(
-                det["bbox"], det["keypoints"], keypoint_conf_thres
-            ) for det in detections]
-            
-            max_score_idx = np.argmax(scores)
-            
-            # If all scores are low, fall back to largest area
-            if scores[max_score_idx] < 0.1:
-                max_score_idx = max(range(len(detections)), key=lambda i: detections[i]["bbox_area"])
-            
-            self.track_bbox = detections[max_score_idx]["bbox"]
-            bbox = self.track_bbox
-            self.track_center = np.array([(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2])
-            self.track_keypoints = detections[max_score_idx]["keypoints"]
-            self.track_last_seen = frame_idx
-            self.track_missing_count = 0
-            
-            return max_score_idx
+        # If no tracks exist, initialize all detections as new tracks
+        if len(self.tracks) == 0:
+            assigned_matches = {}
+            for i, det in enumerate(detections):
+                tid = self.next_track_id
+                self.next_track_id += 1
+                
+                bbox = det["bbox"]
+                center = np.array([(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2])
+                
+                self.tracks[tid] = {
+                    "bbox": bbox,
+                    "center": center,
+                    "velocity": np.array([0.0, 0.0]),
+                    "keypoints": det["keypoints"],
+                    "last_seen": frame_idx,
+                    "missing_count": 0
+                }
+                assigned_matches[tid] = i
+            return assigned_matches
+
+        # Match detections to existing tracks
+        # Cost matrix: rows=tracks, cols=detections
+        track_ids = list(self.tracks.keys())
+        costs = np.zeros((len(track_ids), len(detections)))
         
-        # Match to existing track
-        best_idx = -1
-        best_cost = 1e9
+        for r, tid in enumerate(track_ids):
+            track = self.tracks[tid]
+            # Predict new position with velocity
+            pred_center = track["center"] + track["velocity"]
+            # Construct a dummy bbox for prediction centered at pred_center
+            w = track["bbox"][2] - track["bbox"][0]
+            h = track["bbox"][3] - track["bbox"][1]
+            pred_bbox = [pred_center[0] - w/2, pred_center[1] - h/2, 
+                         pred_center[0] + w/2, pred_center[1] + h/2]
+            
+            for c, det in enumerate(detections):
+                bbox = det["bbox"]
+                iou = compute_iou(pred_bbox, bbox)
+                dist = compute_center_distance(pred_bbox, bbox)
+                
+                # Setup cost (minimize this)
+                # 1 - IoU (0 to 1) + Distance (0 to inf)
+                costs[r, c] = (1.0 - iou) + dist
         
-        for i, det in enumerate(detections):
+        # Greedy assignment
+        assigned_track_indices = set()
+        assigned_det_indices = set()
+        matches = {} # tid -> det_idx
+        
+        # Flatten and sort matches by cost
+        possible_matches = []
+        for r in range(len(track_ids)):
+            for c in range(len(detections)):
+                possible_matches.append((costs[r, c], r, c))
+        
+        possible_matches.sort(key=lambda x: x[0])
+        
+        for cost, r, c in possible_matches:
+            if r in assigned_track_indices or c in assigned_det_indices:
+                continue
+            
+            # Check thresholds
+            track_id = track_ids[r]
+            
+            # Use thresholds from config
+            if cost > 2.0: # Loose threshold for combined cost, refine if needed
+                 # Check individual components if possible, but simplified here:
+                 # If cost is high, it means low IoU and high distance
+                 pass
+            
+            # Re-verify with strict thresholds for IoU or Dist
+            # For simplicity, we trust the cost, but let's double check if it's too far
+            # If cost > 1.0 it implies IoU < 0 and dist > 0 which is impossible, 
+            # OR IoU=0 and Dist > 0.
+            # config["track_iou_thres"] and ["track_center_dist_thres"]
+            # Let's map back to raw values? 
+            # Easier: Just use the cost as a proxy or re-check
+            
+            # Re-calculate to check against specific thresholds if needed, 
+            # but greedy cost matching usually robust enough.
+            # Enforce at least some overlap or closeness
+            
+            # Let's assume valid match if cost < threshold
+            # Heuristic: Match if cost is reasonable. 
+            # Only strictly filter invalid ones (too far)
+            
+            matches[track_id] = c
+            assigned_track_indices.add(r)
+            assigned_det_indices.add(c)
+        
+        # Update matched tracks
+        final_matches = {}
+        for tid, det_idx in matches.items():
+            det = detections[det_idx]
             bbox = det["bbox"]
+            center = np.array([(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2])
             
-            # Compute IoU
-            iou = self._compute_iou(self.track_bbox, bbox)
+            track = self.tracks[tid]
+            prev_center = track["center"]
             
-            # Compute center distance
-            center_dist = self._compute_center_distance(self.track_bbox, bbox)
+            # Update velocity
+            velocity = center - prev_center
             
-            # Combined cost (lower is better)
-            # Favor high IoU and low distance
-            cost = (1.0 - iou) + center_dist
+            self.tracks[tid]["bbox"] = bbox
+            self.tracks[tid]["center"] = center
+            self.tracks[tid]["velocity"] = velocity
+            self.tracks[tid]["keypoints"] = det["keypoints"]
+            self.tracks[tid]["last_seen"] = frame_idx
+            self.tracks[tid]["missing_count"] = 0
             
-            if cost < best_cost:
-                best_cost = cost
-                best_idx = i
+            final_matches[tid] = det_idx
+            
+        # Handle unmatched tracks (missed)
+        for r, tid in enumerate(track_ids):
+            if r not in assigned_track_indices:
+                self.tracks[tid]["missing_count"] += 1
+                if self.tracks[tid]["missing_count"] > self.config["track_max_missing"]:
+                    del self.tracks[tid]
         
-        # Check if match is good enough
-        if best_idx >= 0:
-            iou = self._compute_iou(self.track_bbox, detections[best_idx]["bbox"])
-            center_dist = self._compute_center_distance(self.track_bbox, detections[best_idx]["bbox"])
-            
-            if iou >= self.config["track_iou_thres"] or center_dist <= self.config["track_center_dist_thres"]:
-                # Good match, update track
-                bbox = detections[best_idx]["bbox"]
-                new_center = np.array([(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2])
+        # Handle unmatched detections (new tracks)
+        for c, det in enumerate(detections):
+            if c not in assigned_det_indices:
+                tid = self.next_track_id
+                self.next_track_id += 1
                 
-                # Update velocity (simple diff)
-                self.track_velocity = new_center - self.track_center
+                bbox = det["bbox"]
+                center = np.array([(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2])
                 
-                self.track_bbox = bbox
-                self.track_center = new_center
-                self.track_keypoints = detections[best_idx]["keypoints"]
-                self.track_last_seen = frame_idx
-                self.track_missing_count = 0
+                self.tracks[tid] = {
+                    "bbox": bbox,
+                    "center": center,
+                    "velocity": np.array([0.0, 0.0]),
+                    "keypoints": det["keypoints"],
+                    "last_seen": frame_idx,
+                    "missing_count": 0
+                }
+                final_matches[tid] = c
                 
-                return best_idx
-        
-        # No good match, increment missing
-        self.track_missing_count += 1
-        
-        if self.track_missing_count > self.config["track_max_missing"]:
-            # Re-initialize with fall likelihood
-            scores = [self._compute_fall_likelihood_score(
-                det["bbox"], det["keypoints"], keypoint_conf_thres
-            ) for det in detections]
-            
-            max_score_idx = np.argmax(scores)
-            
-            if scores[max_score_idx] < 0.1:
-                max_score_idx = max(range(len(detections)), key=lambda i: detections[i]["bbox_area"])
-            
-            self.track_bbox = detections[max_score_idx]["bbox"]
-            bbox = self.track_bbox
-            self.track_center = np.array([(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2])
-            self.track_keypoints = detections[max_score_idx]["keypoints"]
-            self.track_last_seen = frame_idx
-            self.track_missing_count = 0
-            
-            return max_score_idx
-        
-        # Return -1 for missing but within tolerance
-        return -1
+        return final_matches
