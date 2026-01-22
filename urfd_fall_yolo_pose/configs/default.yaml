@@ -50,10 +50,10 @@ height_window: 12
 max_missing_streak: 5
 
 # Recovery Detection (suppress false positives)
-recovery_window: 15 # Window to check for recovery
-recovery_upright_angle_thres: 35.0 # Angle threshold for upright posture (deg)
-recovery_ar_thres: 0.9 # AR threshold for upright posture
-recovery_height_recover_ratio: 0.8 # Height recovery ratio
+recovery_window: 10 # Window to check for recovery (reduced for faster response)
+recovery_upright_angle_thres: 45.0 # Angle threshold for upright posture (deg) - more lenient
+recovery_ar_thres: 1.0 # AR threshold for upright posture - more lenient
+recovery_height_recover_ratio: 0.75 # Height recovery ratio - easier to trigger
 
 # Motion Settling (for sustained lying)
 motion_settle_window: 8 # Window to check motion settling

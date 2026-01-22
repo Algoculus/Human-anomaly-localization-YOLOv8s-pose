@@ -183,11 +183,21 @@ class FallStateMachine:
             if baseline_height > 0:
                 height_recovered = (recent_max_height / baseline_height) > recovery_height_recover_ratio
         
-        # Recovery: sustained upright posture + height recovery
-        if len(self.recovery_history) >= recovery_window // 2:
-            upright_count = sum(self.recovery_history[-recovery_window // 2:])
-            if upright_count >= recovery_window // 3 and height_recovered:
-                return True
+        # IMPROVED: More responsive recovery detection
+        # For FALL_CONFIRMED state: Require only 3-4 consecutive upright frames (0.2-0.3s at 15fps)
+        # For CANDIDATE state: Require more sustained upright (original logic)
+        if self.state == "FALL_CONFIRMED":
+            # Quick recovery check: 3-4 consecutive upright frames
+            if len(self.recovery_history) >= 4:
+                recent_upright = self.recovery_history[-4:]
+                if sum(recent_upright) >= 3 and height_recovered:
+                    return True
+        else:
+            # Original logic for CANDIDATE state
+            if len(self.recovery_history) >= recovery_window // 2:
+                upright_count = sum(self.recovery_history[-recovery_window // 2:])
+                if upright_count >= recovery_window // 3 and height_recovered:
+                    return True
         
         return False
     
@@ -340,12 +350,14 @@ class FallStateMachine:
             has_recovered = self._check_recovery(features)
             
             if has_recovered:
-                # Person recovered, cancel fall alarm
+                # Person recovered, cancel fall alarm immediately
                 self.state = "NORMAL"
                 self.fall_confirmed = False
-                self.score_accumulator = 0.3  # Reset but keep some memory
+                self.score_accumulator = 0.0  # Complete reset
                 self.candidate_history = []
                 self.confirm_history = []
+                self.recovery_history = []  # Clear recovery history
+                print("✅ RECOVERY DETECTED: Person stood up, resetting to NORMAL state")
             else:
                 # Stay confirmed and keep score at 1.0
                 self.score_accumulator = 1.0
