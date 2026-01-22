@@ -1,14 +1,19 @@
 import numpy as np
 
 class PrimaryPersonTracker:
-    # Temporal tracking of primary person using deterministic track-by-detection
+    """Temporal tracking of primary person using deterministic track-by-detection."""
     
     def __init__(self, config):
+        """Initialize tracker.
+        
+        Args:
+            config: Configuration dict with tracking parameters
+        """
         self.config = config
         self.reset()
     
     def reset(self):
-        # Reset tracker state
+        """Reset tracker state."""
         self.track_bbox = None
         self.track_center = None
         self.track_velocity = np.array([0.0, 0.0])
@@ -17,7 +22,14 @@ class PrimaryPersonTracker:
         self.track_keypoints = None
     
     def _compute_iou(self, bbox1, bbox2):
-        # Compute IoU between two bboxes [x1, y1, x2, y2]
+        """Compute IoU between two bboxes.
+        
+        Args:
+            bbox1, bbox2: [x1, y1, x2, y2]
+        
+        Returns:
+            iou: Intersection over Union
+        """
         x1_int = max(bbox1[0], bbox2[0])
         y1_int = max(bbox1[1], bbox2[1])
         x2_int = min(bbox1[2], bbox2[2])

@@ -3,10 +3,22 @@ import numpy as np
 import cv2
 
 class YOLOPoseDetector:
-    # YOLOv8 pose detection wrapper with optional low-light preprocessing
+    """Wrapper for YOLOv8 pose detection with optional preprocessing."""
     
     def __init__(self, model_path="yolov8s-pose.pt", imgsz=640, conf_thres=0.25, iou_thres=0.45,
                  preprocess_lowlight=False, gamma=1.3, clahe_clip=2.0, clahe_grid=8):
+        """Initialize YOLO pose detector.
+        
+        Args:
+            model_path: Path to YOLO model weights
+            imgsz: Image size for inference
+            conf_thres: Confidence threshold
+            iou_thres: IoU threshold for NMS
+            preprocess_lowlight: Enable low-light preprocessing
+            gamma: Gamma correction value
+            clahe_clip: CLAHE clip limit
+            clahe_grid: CLAHE grid size
+        """
         self.model = YOLO(model_path)
         self.imgsz = imgsz
         self.conf_thres = conf_thres
@@ -17,7 +29,7 @@ class YOLOPoseDetector:
         self.clahe_grid = clahe_grid
     
     def _preprocess(self, image):
-        # Apply gamma correction + CLAHE for low-light scenes
+        """Apply low-light preprocessing if enabled."""
         if not self.preprocess_lowlight:
             return image
         
@@ -39,8 +51,18 @@ class YOLOPoseDetector:
         return cv2.cvtColor(ycrcb, cv2.COLOR_YCrCb2BGR)
     
     def detect(self, image):
-        # Run pose detection, returns list of detections with bbox, keypoints, conf
-        # NOTE: Detects ALL people in frame, tracker selects primary person later
+        """Run pose detection on an image.
+        
+        Args:
+            image: BGR image (numpy array)
+        
+        Returns:
+            detections: List of dicts, each containing:
+                - bbox: [x1, y1, x2, y2]
+                - conf: confidence score
+                - keypoints: array of shape (17, 3) - [x, y, conf] for each keypoint
+                - bbox_area: bbox width * height
+        """
         # Apply preprocessing
         processed_image = self._preprocess(image)
         
