@@ -24,7 +24,7 @@ fallback_tracker_type: "kcf"
 angle_thres: 58.0
 ar_thres: 1.2
 confirm_angle_thres: 48.0
-confirm_ar_thres: 1.3
+confirm_ar_thres: 1.25
 height_drop_thres: 0.22
 height_drop_thres_strong: 0.3
 
@@ -33,7 +33,7 @@ dy_fall_thres: 18.0
 dy_window: 5
 dy_short_window: 3 # Short window for dy peak detection
 dy_long_window: 10 # Long window for dy history
-dy_peak_thres: 16.5 # Threshold for fast fall confirmation (px) - TUNED for all metrics >= 0.85
+dy_peak_thres: 15.5 # Threshold for fast fall confirmation (px) - TUNED for all metrics >= 0.85
 
 # Height Drop Analysis
 height_drop_short_window: 5 # Short window for height drop
@@ -41,7 +41,7 @@ height_drop_short_window: 5 # Short window for height drop
 # Temporal Smoothing Parameters (with tolerance)
 cand_enter_frames: 2
 cand_tolerance: 1
-confirm_frames: 5
+confirm_frames: 4
 confirm_tolerance: 2
 confirm_window: 10
 height_window: 12
@@ -68,7 +68,7 @@ score_boost_candidate: 0.05
 score_boost_confirmed: 1.0
 
 # FIX-4: Minimum consecutive FALL_CONFIRMED frames for sequence-level decision
-min_confirm_duration_frames: 3
+min_confirm_duration_frames: 2
 
 # Output Settings
 output_fps: 25

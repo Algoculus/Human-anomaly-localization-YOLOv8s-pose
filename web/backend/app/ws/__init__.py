@@ -99,7 +99,7 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        print(f"❌ WebSocket error: {e}")
+        print(f"[WS_ERROR] WebSocket error: {e}")
     finally:
         if registered:
             manager.disconnect(websocket)

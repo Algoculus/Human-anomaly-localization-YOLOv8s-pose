@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Users, Bell, Image as ImageIcon, Wifi, AlertTriangle, Video } from 'lucide-react'
+import { ArrowLeft, Users, Bell, Image as Wifi, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -141,19 +141,19 @@ export default function ReceiverPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 p-4 md:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-gray-800 p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 md:mb-8 gap-4">
           <div className="flex items-center gap-3 md:gap-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate('/')} className="hover:bg-white/50 dark:hover:bg-gray-800/50">
+            <Button variant="ghost" size="icon" onClick={() => navigate('/')} className="hover:bg-gray-700 text-gray-300 hover:text-white">
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <div>
-              <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-red-600 to-orange-600 bg-clip-text text-transparent">
+              <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-red-400 to-orange-400 bg-clip-text text-transparent">
                 Alert Receiver
               </h1>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Monitor fall alerts in real-time</p>
+              <p className="text-sm text-gray-400">Monitor fall alerts in real-time</p>
             </div>
           </div>
           
@@ -190,48 +190,48 @@ export default function ReceiverPage() {
         <div className="grid lg:grid-cols-3 gap-4 md:gap-6">
           {/* Configuration Panel */}
           <div>
-            <Card className="shadow-lg border-2 border-gray-200 dark:border-gray-700">
-              <CardHeader className="bg-gradient-to-r from-red-50 to-orange-50 dark:from-gray-800 dark:to-gray-700">
-                <CardTitle className="text-lg">Configuration</CardTitle>
+            <Card className="shadow-2xl border-2 border-gray-700 bg-gray-800/90 backdrop-blur-sm">
+              <CardHeader className="bg-gradient-to-r from-gray-800 to-slate-800 border-b border-gray-700">
+                <CardTitle className="text-lg text-gray-200">Configuration</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4 pt-6">
-                <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
-                  <Label className="text-sm font-medium text-red-900 dark:text-red-300">Room ID (Fixed)</Label>
-                  <p className="text-sm text-red-700 dark:text-red-400 mt-1 font-mono">{FIXED_ROOM_ID}</p>
-                  <p className="text-xs text-red-600 dark:text-red-500 mt-2">All devices use the same room</p>
+                <div className="p-4 bg-red-950/30 rounded-lg border border-red-800">
+                  <Label className="text-sm font-medium text-red-300">Room ID (Fixed)</Label>
+                  <p className="text-sm text-red-400 mt-1 font-mono">{FIXED_ROOM_ID}</p>
+                  <p className="text-xs text-red-500 mt-2">All devices use the same room</p>
                 </div>
                 <div>
-                  <Label>Device ID</Label>
+                  <Label className="text-gray-300">Device ID</Label>
                   <Input 
                     value={deviceId} 
                     disabled
-                    className="font-mono text-sm bg-gray-50 dark:bg-gray-800"
+                    className="font-mono text-sm bg-gray-900/50 border-gray-700 text-gray-300"
                   />
                 </div>
 
-                <div className="pt-4 border-t space-y-3">
-                  <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                    <Label className="text-sm flex items-center gap-2">
+                <div className="pt-4 border-t border-gray-700 space-y-3">
+                  <div className="flex items-center justify-between p-3 bg-gray-900/50 rounded-lg border border-gray-700">
+                    <Label className="text-sm flex items-center gap-2 text-gray-300">
                       <Wifi className="w-4 h-4" />
                       Status
                     </Label>
                     {isConnected ? (
-                      <Badge className="bg-green-500 animate-pulse">
+                      <Badge className="bg-green-500 animate-pulse shadow-lg shadow-green-500/50">
                         Connected
                       </Badge>
                     ) : (
-                      <Badge variant="secondary">
+                      <Badge variant="secondary" className="bg-gray-700 text-gray-300">
                         Disconnected
                       </Badge>
                     )}
                   </div>
                   
-                  <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                    <Label className="text-sm flex items-center gap-2">
+                  <div className="flex items-center justify-between p-3 bg-gray-900/50 rounded-lg border border-gray-700">
+                    <Label className="text-sm flex items-center gap-2 text-gray-300">
                       <AlertTriangle className="w-4 h-4" />
                       Total Alarms
                     </Label>
-                    <Badge variant="destructive" className="text-base px-3 py-1">
+                    <Badge variant="destructive" className="text-base px-3 py-1 shadow-lg">
                       {alarms.length}
                     </Badge>
                   </div>
@@ -240,15 +240,15 @@ export default function ReceiverPage() {
             </Card>
           </div>
 
-          {/* Alarms Grid */}
+          {/* Alarms List */}
           <div className="lg:col-span-2">
-            <Card className="shadow-xl border-2 border-gray-200 dark:border-gray-700">
-              <CardHeader className="bg-gradient-to-r from-red-50 to-orange-50 dark:from-gray-800 dark:to-gray-700">
-                <CardTitle className="flex items-center gap-2">
-                  <Bell className="w-5 h-5 text-red-600" />
+            <Card className="shadow-2xl border-2 border-gray-700 bg-gray-800/90 backdrop-blur-sm">
+              <CardHeader className="bg-gradient-to-r from-gray-800 to-slate-800 border-b border-gray-700">
+                <CardTitle className="flex items-center gap-2 text-gray-200">
+                  <Bell className="w-5 h-5 text-red-400" />
                   Recent Alarms
                   {alarms.length > 0 && (
-                    <Badge variant="destructive" className="ml-auto">
+                    <Badge variant="destructive" className="ml-auto shadow-lg">
                       {alarms.length}
                     </Badge>
                   )}
@@ -256,78 +256,66 @@ export default function ReceiverPage() {
               </CardHeader>
               <CardContent className="pt-6">
                 {alarms.length === 0 ? (
-                  <div className="text-center py-16 text-gray-500">
+                  <div className="text-center py-16 text-gray-400">
                     <div className="relative w-24 h-24 mx-auto mb-6">
-                      <ImageIcon className="w-full h-full opacity-20" />
+                      <Bell className="w-full h-full opacity-20" />
                       {isConnected && (
                         <div className="absolute -top-2 -right-2">
                           <Wifi className="w-8 h-8 text-green-500 animate-pulse" />
                         </div>
                       )}
                     </div>
-                    <p className="text-lg font-medium">No alarms received yet</p>
-                    <p className="text-sm mt-2">
+                    <p className="text-lg font-medium text-gray-300">No alarms received yet</p>
+                    <p className="text-sm mt-2 text-gray-500">
                       {isConnected 
                         ? 'Listening for fall detections...' 
                         : 'Click "Connect" to start monitoring'}
                     </p>
                   </div>
                 ) : (
-                  <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-3">
                     {alarms.map((alarm, idx) => (
-                      <Card 
+                      <div 
                         key={idx} 
-                        className="border-2 border-red-300 dark:border-red-800 overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300 animate-in slide-in-from-bottom"
+                        className="p-4 border-2 border-red-700 rounded-lg bg-gradient-to-r from-red-950/40 to-orange-950/40 hover:border-red-600 transition-all duration-300 animate-in slide-in-from-bottom shadow-lg hover:shadow-xl"
                         style={{ animationDelay: `${idx * 50}ms` }}
                       >
-                        <CardContent className="p-0">
-                          {/* Snapshot */}
-                          <div className="relative">
-                            <img
-                              src={`data:image/jpeg;base64,${alarm.snapshot}`}
-                              alt="Fall snapshot"
-                              className="w-full aspect-video object-cover"
-                            />
-                            <div className="absolute top-2 right-2">
-                              <Badge variant="destructive" className="animate-pulse">
-                                🚨 FALL
-                              </Badge>
-                            </div>
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="destructive" className="animate-pulse shadow-lg">
+                              [FALL DETECTED]
+                            </Badge>
+                            <span className="text-xs text-gray-400 font-mono">
+                              Frame #{alarm.frameId}
+                            </span>
+                          </div>
+                          <span className="text-sm text-gray-300 font-medium">
+                            {formatTime(alarm.ts)}
+                          </span>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                          <div className="p-2 bg-gray-900/50 rounded border border-gray-700">
+                            <span className="text-gray-400 text-xs block mb-1">Camera ID</span>
+                            <span className="font-mono text-gray-200">{alarm.deviceId ? alarm.deviceId.split('-').pop() : 'unknown'}</span>
                           </div>
                           
-                          {/* Details */}
-                          <div className="p-4 space-y-2 text-sm bg-gradient-to-br from-red-50/50 to-orange-50/50 dark:from-red-900/20 dark:to-orange-900/20">
-                            <div className="flex items-center justify-between">
-                              <span className="text-gray-600 dark:text-gray-400 flex items-center gap-1">
-                                <Video className="w-3 h-3" />
-                                Camera
-                              </span>
-                              <span className="font-mono text-xs bg-white dark:bg-gray-800 px-2 py-1 rounded">
-                                {alarm.deviceId ? alarm.deviceId.split('-').pop() : 'unknown'}
-                              </span>
-                            </div>
-                            
-                            <div className="flex items-center justify-between">
-                              <span className="text-gray-600 dark:text-gray-400">Time</span>
-                              <span className="font-medium">{formatTime(alarm.ts)}</span>
-                            </div>
-                            
-                            <div className="flex items-center justify-between">
-                              <span className="text-gray-600 dark:text-gray-400">Confidence</span>
-                              <Badge variant="destructive" className="font-bold">
-                                {(alarm.score * 100).toFixed(1)}%
-                              </Badge>
-                            </div>
-                            
-                            <div className="flex items-center justify-between">
-                              <span className="text-gray-600 dark:text-gray-400">Frame</span>
-                              <span className="font-mono text-xs bg-white dark:bg-gray-800 px-2 py-1 rounded">
-                                #{alarm.frameId}
-                              </span>
-                            </div>
+                          <div className="p-2 bg-gray-900/50 rounded border border-gray-700">
+                            <span className="text-gray-400 text-xs block mb-1">State</span>
+                            <span className="font-bold text-red-400">{alarm.state}</span>
                           </div>
-                        </CardContent>
-                      </Card>
+                          
+                          <div className="p-2 bg-gray-900/50 rounded border border-gray-700">
+                            <span className="text-gray-400 text-xs block mb-1">Confidence</span>
+                            <span className="font-bold text-red-400">{(alarm.score * 100).toFixed(1)}%</span>
+                          </div>
+                          
+                          <div className="p-2 bg-gray-900/50 rounded border border-gray-700">
+                            <span className="text-gray-400 text-xs block mb-1">Timestamp</span>
+                            <span className="text-gray-200">{new Date(alarm.ts).toLocaleTimeString()}</span>
+                          </div>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 )}

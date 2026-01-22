@@ -1,87 +1,66 @@
-"""Generate final summary of optimization results."""
+"""Generate summary of latest evaluation results."""
 import json
 from pathlib import Path
 
 print("="*80)
-print("URFD FALL DETECTION OPTIMIZATION - FINAL SUMMARY")
+print("URFD FALL DETECTION - EVALUATION SUMMARY")
 print("="*80)
 
-# Load metrics
-with open("runs/baseline/metrics.json") as f:
-    baseline = json.load(f)
 with open("runs/fixed/metrics.json") as f:
-    fixed = json.load(f)
+    metrics = json.load(f)
 
-# Display metrics comparison
-print("\n📊 PERFORMANCE METRICS")
+print("\n[METRICS] PERFORMANCE METRICS")
 print("-" * 80)
-print(f"{'Metric':<20} {'Baseline':<12} {'Fixed':<12} {'Change':<12} {'Status'}")
+print(f"{'Metric':<20} {'Value':<12} {'Target':<12} {'Status'}")
 print("-" * 80)
 
-metrics = [
-    ('Accuracy', 'accuracy'),
-    ('Precision', 'precision'),
-    ('Recall', 'recall'),
-    ('Specificity', 'specificity'),
-    ('F1-Score', 'f1_score')
+metrics_list = [
+    ('Accuracy', metrics['accuracy'], 0.85),
+    ('Precision', metrics['precision'], 0.85),
+    ('Recall', metrics['recall'], 0.85),
+    ('Specificity', metrics['specificity'], 0.85),
+    ('F1-Score', metrics['f1_score'], 0.85)
 ]
 
-for name, key in metrics:
-    b_val = baseline[key]
-    f_val = fixed[key]
-    change = f_val - b_val
-    pct = (change / b_val * 100) if b_val > 0 else 0
-    
-    if name == 'Recall':
-        status = "✅ TARGET MET" if f_val >= 0.85 else "❌ Below target"
-    elif change > 0:
-        status = "✅ Improved"
-    elif abs(change) < 0.02:
-        status = "➖ Stable"
+all_pass = True
+for name, value, target in metrics_list:
+    if value >= target:
+        status = "✓ PASS"
     else:
-        status = "⚠️ Decreased"
+        status = "✗ FAIL"
+        all_pass = False
     
-    print(f"{name:<20} {b_val:<12.3f} {f_val:<12.3f} {pct:>+6.1f}%     {status}")
+    print(f"{name:<20} {value:<12.3f} {target:<12.2f} {status}")
 
-print("\n📈 CONFUSION MATRIX")
+cm = metrics['confusion_matrix']
+print(f"\n[CONFUSION_MATRIX]")
 print("-" * 80)
-print("                    Baseline              Fixed")
-print("-" * 80)
-print(f"True Positives:     {baseline['confusion_matrix']['TP']:<10}          {fixed['confusion_matrix']['TP']:<10}  ({fixed['confusion_matrix']['TP'] - baseline['confusion_matrix']['TP']:+d})")
-print(f"True Negatives:     {baseline['confusion_matrix']['TN']:<10}          {fixed['confusion_matrix']['TN']:<10}  ({fixed['confusion_matrix']['TN'] - baseline['confusion_matrix']['TN']:+d})")
-print(f"False Positives:    {baseline['confusion_matrix']['FP']:<10}          {fixed['confusion_matrix']['FP']:<10}  ({fixed['confusion_matrix']['FP'] - baseline['confusion_matrix']['FP']:+d})")
-print(f"False Negatives:    {baseline['confusion_matrix']['FN']:<10}          {fixed['confusion_matrix']['FN']:<10}  ({fixed['confusion_matrix']['FN'] - baseline['confusion_matrix']['FN']:+d})")
+print(f"True Positives:     {cm['TP']:<10}")
+print(f"True Negatives:     {cm['TN']:<10}")
+print(f"False Positives:    {cm['FP']:<10}")
+print(f"False Negatives:    {cm['FN']:<10}")
 
-print("\n🎯 KEY ACHIEVEMENTS")
+print(f"\n[SUMMARY]")
 print("-" * 80)
-print(f"✅ Recall increased from {baseline['recall']:.3f} to {fixed['recall']:.3f} (+{(fixed['recall']-baseline['recall'])/baseline['recall']*100:.1f}%)")
-print(f"✅ False negatives reduced from {baseline['confusion_matrix']['FN']} to {fixed['confusion_matrix']['FN']} (-{(baseline['confusion_matrix']['FN']-fixed['confusion_matrix']['FN'])/baseline['confusion_matrix']['FN']*100:.0f}%)")
-print(f"✅ True positives increased from {baseline['confusion_matrix']['TP']} to {fixed['confusion_matrix']['TP']} (+{fixed['confusion_matrix']['TP']-baseline['confusion_matrix']['TP']})")
-print(f"✅ F1-score improved from {baseline['f1_score']:.3f} to {fixed['f1_score']:.3f} (+{(fixed['f1_score']-baseline['f1_score'])/baseline['f1_score']*100:.1f}%)")
+if all_pass:
+    print("✅ ALL METRICS >= 0.85 TARGET MET!")
+    print("System ready for deployment.")
+else:
+    print("⚠️ Some metrics below 0.85 target.")
+    print("Further optimization needed.")
 
-print("\n⚠️ TRADEOFFS")
-print("-" * 80)
-print(f"⚠️ Precision decreased from {baseline['precision']:.3f} to {fixed['precision']:.3f} (-{(baseline['precision']-fixed['precision'])/baseline['precision']*100:.1f}%)")
-print(f"⚠️ False positives increased from {baseline['confusion_matrix']['FP']} to {fixed['confusion_matrix']['FP']} (+{fixed['confusion_matrix']['FP']-baseline['confusion_matrix']['FP']})")
-print(f"⚠️ Specificity decreased from {baseline['specificity']:.3f} to {fixed['specificity']:.3f} (-{(baseline['specificity']-fixed['specificity'])/baseline['specificity']*100:.1f}%)")
-
-print("\n📁 OUTPUT FILES")
+print(f"\n[OUTPUT_FILES]")
 print("-" * 80)
 files_to_check = [
-    ("Baseline Metrics", "runs/baseline/metrics.json"),
-    ("Fixed Metrics", "runs/fixed/metrics.json"),
-    ("Predictions", "outputs/predictions.csv"),
-    ("Evaluation Summary", "outputs/eval_summary.json"),
-    ("Confusion Matrix Plot", "outputs/plots/confusion_matrix_comparison.png"),
-    ("Metrics Comparison", "outputs/plots/metrics_comparison.png"),
-    ("Precision-Recall Plot", "outputs/plots/precision_recall_tradeoff.png"),
-    ("Delta Plot", "outputs/plots/confusion_matrix_delta.png"),
-    ("Optimization Report", "OPTIMIZATION_REPORT.md")
+    ("Metrics JSON", "runs/fixed/metrics.json"),
+    ("Predictions CSV", "runs/fixed/predictions.csv"),
+    ("Confusion Matrix", "outputs/plots/confusion_matrix.png"),
+    ("Metrics Bar Chart", "outputs/plots/metrics_bar_chart.png")
 ]
 
 for name, path in files_to_check:
     exists = "✅" if Path(path).exists() else "❌"
-    print(f"{exists} {name:<30} {path}")
+    print(f"{exists} {name:<25} {path}")
 
 print("\n🎥 RENDERED VIDEOS")
 print("-" * 80)

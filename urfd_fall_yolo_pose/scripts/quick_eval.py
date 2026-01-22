@@ -12,7 +12,7 @@ from src.urfd.utils import load_config, set_seed
 from src.urfd.eval import compute_metrics
 
 # Config
-N = 70  # All sequences
+N = 20  # Quick eval on 20 sequences
 config = load_config("configs/default.yaml")
 set_seed(config["seed"])
 
@@ -36,9 +36,11 @@ detector = YOLOPoseDetector(
 )
 
 results = []
+DEBUG_SEQS = ["adl-17", "adl-21", "adl-34", "adl-35", "fall-19", "fall-23"]
 for idx, row in df_test.iterrows():
     print(f"Processing {idx+1}/{len(df_test)}: {row['seq_name']}")
-    result = process_sequence(row, detector, config, save_video=False)
+    save_vid = row['seq_name'] in DEBUG_SEQS
+    result = process_sequence(row, detector, config, save_video=save_vid)
     if result:
         results.append(result)
 
