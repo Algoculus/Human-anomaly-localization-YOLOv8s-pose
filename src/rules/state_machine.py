@@ -1,71 +1,123 @@
 """
-State Machine Module
+EMERGENCY RECALL FIX - Relaxed State Machine
 
-Determines the semantic state of the person (NORMAL, FALLING, LYING, etc.)
-and manages fall alerts based on temporal transitions.
+Problem: Recall = 0.485 (48.5%) - TOO LOW!
+Cause: Thresholds too strict, missing many real falls
+
+Solution: Significantly relax thresholds to boost recall
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Optional, List
+from collections import deque
 from loguru import logger
 
 from .scoring import FallScoreComponents
+from .features import PoseFeatures
 from config import Config, get_config
 
+
 class State(Enum):
+    """Enhanced state set"""
     NORMAL = "NORMAL"
+    BENDING = "BENDING"
     FALLING = "FALLING"
-    LYING = "LYING" # Confirmed fall
-    LYING_NO_FALL = "LYING_NO_FALL" # Resting/sleeping
+    LYING = "LYING"
+    LYING_NO_FALL = "LYING_NO_FALL"
+    GETTING_UP = "GETTING_UP"
     OCCLUDED = "OCCLUDED"
+
+
+@dataclass
+class StateTransitionHistory:
+    """Track recent state transitions"""
+    states: deque = field(default_factory=lambda: deque(maxlen=30))
+    timestamps: deque = field(default_factory=lambda: deque(maxlen=30))
+    
+    def add(self, state: State, frame_num: int):
+        self.states.append(state)
+        self.timestamps.append(frame_num)
+    
+    def had_falling_recently(self, within_frames: int = 60) -> bool:
+        """Check if FALLING occurred recently (relaxed window)"""
+        if not self.states or not self.timestamps:
+            return False
+        
+        current_frame = self.timestamps[-1]
+        for i in range(len(self.states) - 1, -1, -1):
+            if current_frame - self.timestamps[i] > within_frames:
+                break
+            if self.states[i] == State.FALLING:
+                return True
+        return False
+
 
 @dataclass
 class StateMachineContext:
-    """Historical context for state transitions."""
+    """Extended context"""
     current_state: State = State.NORMAL
     last_state: State = State.NORMAL
     
-    # Timers (frames)
     frames_in_state: int = 0
-    frames_since_drop: int = 9999
+    total_frames: int = 0
+    
+    frames_since_drop_detected: int = 9999
     frames_since_impact: int = 9999
-    frames_prone: int = 0  # Stillness counter for T_hold requirement
-    frames_since_alert: int = 9999  # Cooldown timer
+    frames_since_prone_start: int = 9999
+    frames_since_alert: int = 9999
     
-    # Transition flags
-    had_falling_transition: bool = False  # True if FALLING occurred before current prone
+    consecutive_prone_frames: int = 0
+    consecutive_still_frames: int = 0
     
-    # Flags
+    score_history: deque = field(default_factory=lambda: deque(maxlen=15))
+    drop_score_history: deque = field(default_factory=lambda: deque(maxlen=15))
+    
+    max_drop_score_recent: float = 0.0
+    max_impact_score_recent: float = 0.0
+    max_total_score_recent: float = 0.0
+    
+    fall_sequence_detected: bool = False
+    had_falling_phase: bool = False
+    
     has_alerted: bool = False
+    alert_reason: str = ""
     
-    # Buffer for recent max scores
-    max_drop_score_window: float = 0.0
-    max_impact_score_window: float = 0.0
+    recent_velocity_y: float = 0.0
+    recent_velocity_x: float = 0.0
+    recent_activity: str = "UNKNOWN"
     
-    # Movement tracking
-    recent_velocity: float = 0.0
+    history: StateTransitionHistory = field(default_factory=StateTransitionHistory)
     
     @property
     def behavior_label(self) -> str:
-        """Get human-readable behavior label based on current state and context."""
         if self.current_state == State.LYING:
-            return "FALLEN - ALERT!"
+            return f"⚠️ FALL DETECTED - {self.alert_reason}" if self.has_alerted else "FALLEN"
         elif self.current_state == State.FALLING:
-            return "Falling..."
+            return "⚡ FALLING..."
+        elif self.current_state == State.BENDING:
+            return "Bending/Crouching"
         elif self.current_state == State.LYING_NO_FALL:
             return "Lying (Resting)"
+        elif self.current_state == State.GETTING_UP:
+            return "Getting Up"
         elif self.current_state == State.OCCLUDED:
             return "Person Occluded"
-        else:  # NORMAL
-            if abs(self.recent_velocity) > 2.0:
-                return "Walking"
-            else:
-                return "Standing"
+        else:
+            if self.recent_activity:
+                return self.recent_activity.replace('_', ' ').title()
+            return "Standing/Walking"
+
 
 class FallStateMachine:
     """
-    Finite State Machine for Fall Detection.
+    RECALL-OPTIMIZED State Machine
+    
+    Changes from previous version:
+    - MUCH lower thresholds for fall detection
+    - Faster confirmation (shorter t_hold)
+    - Relaxed transition requirements
+    - More aggressive fall detection
     """
     
     def __init__(self, config: Optional[Config] = None):
@@ -73,161 +125,376 @@ class FallStateMachine:
         self.params = self.config.state
         self.fps = self.config.dataset.fps
         
-        # Thresholds conversion to frames
-        self.transition_window_frames = int(self.params.transition_window_sec * self.fps)
-        self.t_hold_frames = int(self.params.t_hold_sec * self.fps)
-        self.cooldown_frames = int(self.params.alert_cooldown_sec * self.fps)
-        self.inactivity_alert_frames = int(self.params.inactivity_alert_sec * self.fps)
-    
-    def update(self, 
-               scores: FallScoreComponents, 
-               context: StateMachineContext) -> State:
-        """
-        Update state based on current scores and context.
-        Implements: transition requirement, hysteresis, stillness window, cooldown.
-        Returns the new state.
-        """
-        context.frames_in_state += 1
-        context.frames_since_alert += 1
+        # ==== RELAXED THRESHOLDS FOR HIGH RECALL ====
         
-        # 1. Update Context Buffers (drop/impact tracking)
-        if scores.sudden_drop_score > 0.35:
-            context.frames_since_drop = 0
-            context.max_drop_score_window = max(context.max_drop_score_window, scores.sudden_drop_score)
+        # Time windows (in frames)
+        self.transition_window = int(2.0 * self.fps)  # Extended to 2 seconds
+        self.t_hold_min = int(0.4 * self.fps)         # Reduced to 0.4s (was 0.8s)
+        self.t_hold_fast = int(0.2 * self.fps)        # Very fast: 0.2s (was 0.5s)
+        self.cooldown_frames = int(self.params.alert_cooldown_sec * self.fps)
+        self.inactivity_threshold = int(20.0 * self.fps)  # Increased to 20s
+        
+        # State timeouts
+        self.max_bending_duration = int(3.0 * self.fps)
+        self.max_falling_duration = int(3.0 * self.fps)  # Increased
+        self.min_lying_for_alert = int(0.3 * self.fps)   # Reduced to 0.3s
+        self.getting_up_timeout = int(5.0 * self.fps)
+        
+        # ==== CRITICAL: VERY LOW THRESHOLDS FOR RECALL ====
+        self.FALL_ALERT_THRESHOLD = 0.45      # Reduced from 0.65
+        self.FALL_ALERT_STRICT = 0.60         # Reduced from 0.75
+        self.FALLING_ENTRY_THRESHOLD = 0.35   # Reduced from 0.50
+        self.PRONE_THRESHOLD = 0.45           # Reduced from 0.60
+        self.PRONE_STRONG_THRESHOLD = 0.55    # Reduced from 0.70
+        self.HYSTERESIS_EXIT = 0.25           # Reduced from 0.35
+        
+        logger.warning("⚠️ RECALL-OPTIMIZED MODE: Low thresholds for maximum sensitivity")
+        
+    def update(self, 
+               scores: FallScoreComponents,
+               features: PoseFeatures,
+               context: StateMachineContext) -> State:
+        """Update state machine - RECALL OPTIMIZED"""
+        
+        context.frames_in_state += 1
+        context.total_frames += 1
+        context.frames_since_alert += 1
+        context.recent_velocity_y = features.velocity_y
+        context.recent_velocity_x = features.velocity_x
+        context.recent_activity = features.activity_type
+        
+        context.score_history.append(scores.total_score)
+        context.drop_score_history.append(scores.sudden_drop_score)
+        
+        # Track events with RELAXED thresholds
+        if scores.sudden_drop_score > 0.25:  # Lowered from 0.35
+            context.frames_since_drop_detected = 0
+            context.max_drop_score_recent = max(context.max_drop_score_recent, 
+                                                scores.sudden_drop_score)
         else:
-            context.frames_since_drop += 1
-            
-        if scores.impact_score > 0.4:
+            context.frames_since_drop_detected += 1
+            if context.frames_since_drop_detected > 60:
+                context.max_drop_score_recent *= 0.9
+        
+        if scores.impact_score > 0.3:  # Lowered from 0.4
             context.frames_since_impact = 0
-            context.max_impact_score_window = max(context.max_impact_score_window, scores.impact_score)
+            context.max_impact_score_recent = max(context.max_impact_score_recent,
+                                                  scores.impact_score)
         else:
             context.frames_since_impact += 1
+            if context.frames_since_impact > 60:
+                context.max_impact_score_recent *= 0.9
         
-        # 2. Core indicators (Lowered for better frame-level recall)
-        is_prone = scores.prone_score > 0.5  # Lowered from 0.6
-        is_prone_strong = scores.prone_score > 0.6  # Lowered from 0.7
-        is_score_high = scores.total_score > self.params.fall_alert_threshold
-        is_score_low = scores.total_score < self.params.hysteresis_exit_threshold  # Hysteresis
+        context.max_total_score_recent = max(context.max_total_score_recent,
+                                             scores.total_score)
         
-        # Recent transition indicators
-        was_recent_drop = context.frames_since_drop < self.transition_window_frames
-        was_recent_impact = context.frames_since_impact < self.transition_window_frames
-        has_transition_evidence = was_recent_drop or was_recent_impact
+        # Track prone state
+        is_prone = scores.prone_score > self.PRONE_THRESHOLD
+        is_prone_strong = scores.prone_score > self.PRONE_STRONG_THRESHOLD
+        
+        if is_prone:
+            context.consecutive_prone_frames += 1
+            if context.frames_since_prone_start > 100:
+                context.frames_since_prone_start = 0
+        else:
+            context.consecutive_prone_frames = 0
+            context.frames_since_prone_start += 1
         
         # Stillness tracking
-        is_still = abs(context.recent_velocity) < 2.0
-        if is_prone and is_still:
-            context.frames_prone += 1
+        is_still = (abs(features.velocity_y) < 2.0 and 
+                   abs(features.velocity_x) < 2.5)
+        
+        if is_still:
+            context.consecutive_still_frames += 1
         else:
-            context.frames_prone = 0
+            context.consecutive_still_frames = 0
         
-        # 3. State Transitions
-        new_state = context.current_state
+        # RELAXED fall sequence detection
+        if not context.fall_sequence_detected:
+            has_recent_drop = context.frames_since_drop_detected < self.transition_window
+            has_recent_impact = context.frames_since_impact < self.transition_window
+            
+            # Accept either drop OR impact + prone (not both required)
+            if (has_recent_drop or has_recent_impact) and is_prone:
+                context.fall_sequence_detected = True
         
-        # --- NORMAL ---
-        if context.current_state == State.NORMAL:
-            # Reset transition flag when normal
-            context.had_falling_transition = False
-            
-            # Check for fall indicators
-            if scores.sudden_drop_score > 0.3 or scores.impact_score > 0.4:
-                new_state = State.FALLING
-                context.had_falling_transition = True
-                
-            elif is_score_high:
-                if has_transition_evidence:
-                    new_state = State.FALLING
-                    context.had_falling_transition = True
-                elif is_prone:
-                    # Slow lie-down without transition -> Resting
-                    new_state = State.LYING_NO_FALL
-            
-            elif is_prone_strong:
-                if has_transition_evidence:
-                    new_state = State.FALLING
-                    context.had_falling_transition = True
-                else:
-                    new_state = State.LYING_NO_FALL
-            
-        # --- FALLING ---
-        elif context.current_state == State.FALLING:
-            context.had_falling_transition = True  # Mark that we had falling phase
-            
-            if is_prone:
-                # TRANSITION REQUIREMENT: Only LYING (alert) if came from FALLING
-                # Faster entry for better frame recall
-                if context.frames_prone >= self.t_hold_frames // 4:  # Very fast check
-                    new_state = State.LYING
-                elif context.frames_in_state > self.fps * 0.3:  # Very fast: 0.3s
-                    new_state = State.LYING
-                    
-            elif is_score_low and context.frames_in_state > self.fps * 1.5:
-                # Recovered from falling
-                new_state = State.NORMAL
-                context.had_falling_transition = False
+        # Determine new state
+        new_state = self._determine_state(
+            context.current_state,
+            scores,
+            features,
+            context
+        )
         
-        # --- LYING (Alert State) - Stay in this state longer for better recall ---
-        elif context.current_state == State.LYING:
-            # Stricter exit: require BOTH low score AND not prone for longer time
-            if is_score_low and not is_prone and not is_prone_strong:
-                # Require longer time standing up to confirm recovery
-                if context.frames_in_state > self.fps * 3.0:  # 3 seconds to exit
-                    new_state = State.NORMAL
-                    context.had_falling_transition = False
-        
-        # --- LYING_NO_FALL (Resting) ---
-        elif context.current_state == State.LYING_NO_FALL:
-            # Escalate to LYING if sudden drop/impact detected while resting
-            if has_transition_evidence:
-                new_state = State.LYING
-                context.had_falling_transition = True
-            
-            # INACTIVITY TIMER: If lying too long without getting up, escalate to alert
-            # This catches "slow falls" where person can't get up
-            elif context.frames_in_state > self.inactivity_alert_frames:
-                new_state = State.LYING
-                context.had_falling_transition = True  # Treat as fall (can't get up)
-            
-            elif not is_prone:
-                new_state = State.NORMAL
-
-        # 4. Transition Logic Clean-up
+        # Handle state transition
         if new_state != context.current_state:
+            self._on_state_transition(
+                context.current_state,
+                new_state,
+                scores,
+                context
+            )
+            
             context.last_state = context.current_state
             context.current_state = new_state
             context.frames_in_state = 0
-            
-            # Alert logic with cooldown
-            if new_state == State.LYING:
-                # Only alert if: 1) had transition, 2) cooldown passed
-                if context.had_falling_transition and context.frames_since_alert > self.cooldown_frames:
-                    context.has_alerted = True
-                    context.frames_since_alert = 0
+            context.history.add(new_state, context.total_frames)
         
         return new_state
+    
+    def _determine_state(self,
+                        current_state: State,
+                        scores: FallScoreComponents,
+                        features: PoseFeatures,
+                        context: StateMachineContext) -> State:
+        """RECALL-OPTIMIZED state transition logic"""
+        
+        # Key indicators with RELAXED thresholds
+        is_prone = scores.prone_score > self.PRONE_THRESHOLD
+        is_prone_strong = scores.prone_score > self.PRONE_STRONG_THRESHOLD
+        is_score_high = scores.total_score > self.FALL_ALERT_THRESHOLD
+        is_score_very_high = scores.total_score > self.FALL_ALERT_STRICT
+        is_score_low = scores.total_score < self.HYSTERESIS_EXIT
+        
+        is_still = context.consecutive_still_frames > 3  # Relaxed from 5
+        
+        # Recent events - RELAXED windows
+        had_recent_drop = context.frames_since_drop_detected < self.transition_window
+        had_recent_impact = context.frames_since_impact < self.transition_window
+        has_dynamic_event = had_recent_drop or had_recent_impact
+        
+        # Activity - but don't let it block falls
+        is_bending = features.activity_type == "BENDING"
+        is_falling_motion = features.activity_type == "FALLING"
+        
+        # ===== STATE: NORMAL =====
+        if current_state == State.NORMAL:
+            context.had_falling_phase = False
+            context.fall_sequence_detected = False
+            
+            # AGGRESSIVE fall detection - prioritize over bending
+            if is_falling_motion or scores.sudden_drop_score > 0.35:
+                return State.FALLING
+            
+            # High score alone can trigger
+            if is_score_high:
+                return State.FALLING
+            
+            # Prone with any hint of dynamic event
+            if is_prone and has_dynamic_event:
+                return State.FALLING
+            
+            # Even prone alone if strong enough
+            if is_prone_strong:
+                if has_dynamic_event or is_score_high:
+                    return State.FALLING
+                elif not is_bending:
+                    return State.LYING_NO_FALL
+            
+            # Only go to bending if very clear and no fall signals
+            if is_bending and not is_prone and not has_dynamic_event and scores.total_score < 0.3:
+                return State.BENDING
+        
+        # ===== STATE: BENDING =====
+        elif current_state == State.BENDING:
+            # Quick exit to falling if any fall signal
+            if has_dynamic_event or is_score_high or is_prone:
+                return State.FALLING
+            
+            if not is_bending and not is_prone:
+                return State.NORMAL
+            
+            # Short timeout
+            if context.frames_in_state > self.max_bending_duration:
+                if is_prone:
+                    return State.FALLING  # Changed to FALLING instead of LYING_NO_FALL
+                return State.NORMAL
+        
+        # ===== STATE: FALLING =====
+        elif current_state == State.FALLING:
+            context.had_falling_phase = True
+            
+            # VERY FAST confirmation if prone
+            if is_prone:
+                # Ultra-fast path
+                if context.fall_sequence_detected or is_score_very_high:
+                    if context.consecutive_prone_frames >= self.t_hold_fast:
+                        return State.LYING
+                
+                # Fast path
+                if context.consecutive_prone_frames >= self.t_hold_min:
+                    return State.LYING
+                
+                # Even faster if still
+                if is_still and context.frames_in_state > int(0.4 * self.fps):
+                    return State.LYING
+            
+            # Don't exit to normal too quickly
+            if is_score_low and not is_prone:
+                if context.frames_in_state > self.fps * 2.0:  # Longer wait
+                    return State.NORMAL
+            
+            # Extended timeout
+            if context.frames_in_state > self.max_falling_duration:
+                if is_prone:
+                    return State.LYING
+                # Only return to normal if very clearly not falling
+                if scores.total_score < 0.2:
+                    return State.NORMAL
+        
+        # ===== STATE: LYING (Alert) =====
+        elif current_state == State.LYING:
+            # Very strict exit - maintain high recall
+            
+            is_getting_up = (not is_prone and 
+                           features.hip_height_ratio > 0.5 and
+                           features.body_orientation < 45)
+            
+            if is_getting_up:
+                return State.GETTING_UP
+            
+            # Only exit if CLEARLY standing for long time
+            if is_score_low and not is_prone and not is_prone_strong:
+                if context.frames_in_state > self.fps * 6.0:  # Extended to 6 seconds
+                    if features.hip_height_ratio > 0.75 and features.body_orientation < 30:
+                        return State.NORMAL
+        
+        # ===== STATE: LYING_NO_FALL =====
+        elif current_state == State.LYING_NO_FALL:
+            # Quick escalation to LYING
+            if has_dynamic_event or is_score_high:
+                return State.LYING  # Direct to LYING
+            
+            # Shorter inactivity threshold
+            if context.frames_in_state > int(10.0 * self.fps):  # Reduced to 10s
+                if is_still and is_prone:
+                    return State.LYING
+            
+            if not is_prone:
+                return State.NORMAL
+            
+            if not is_prone and features.hip_height_ratio > 0.4:
+                return State.GETTING_UP
+        
+        # ===== STATE: GETTING_UP =====
+        elif current_state == State.GETTING_UP:
+            # Successfully up
+            if features.hip_height_ratio > 0.65 and features.body_orientation < 40:
+                if is_score_low:
+                    return State.NORMAL
+            
+            # Fell back
+            if is_prone_strong or (is_prone and has_dynamic_event):
+                return State.LYING
+            
+            # Back to lying
+            if is_prone and context.frames_in_state > int(0.5 * self.fps):
+                return State.LYING if context.last_state == State.LYING else State.LYING_NO_FALL
+            
+            # Timeout
+            if context.frames_in_state > self.getting_up_timeout:
+                if is_prone:
+                    return State.LYING  # Assume unable to get up = fall
+                return State.NORMAL
+        
+        # ===== STATE: OCCLUDED =====
+        elif current_state == State.OCCLUDED:
+            if features.keypoints_conf_mean > 0.4:  # Lowered threshold
+                if is_prone or is_score_high:
+                    return State.LYING
+                return State.NORMAL
+        
+        return current_state
+    
+    def _on_state_transition(self,
+                            old_state: State,
+                            new_state: State,
+                            scores: FallScoreComponents,
+                            context: StateMachineContext):
+        """Handle state transitions"""
+        
+        logger.info(f"State: {old_state.value} → {new_state.value}")
+        
+        if new_state == State.LYING:
+            if context.frames_since_alert > self.cooldown_frames:
+                context.has_alerted = True
+                context.frames_since_alert = 0
+                
+                # Determine reason
+                if context.fall_sequence_detected:
+                    context.alert_reason = "Fall Sequence"
+                elif scores.impact_score > 0.5:
+                    context.alert_reason = "High Impact"
+                elif context.max_drop_score_recent > 0.4:
+                    context.alert_reason = "Sudden Drop"
+                elif scores.prone_score > 0.6:
+                    context.alert_reason = "Prone Position"
+                elif old_state == State.LYING_NO_FALL:
+                    context.alert_reason = "Unable to Get Up"
+                else:
+                    context.alert_reason = "High Fall Risk"
+                
+                logger.warning(f"⚠️  FALL ALERT: {context.alert_reason}")
+        
+        if old_state == State.LYING and new_state != State.LYING:
+            logger.info(f"Exiting alert after {context.frames_in_state / self.fps:.1f}s")
+            
+            if new_state == State.NORMAL:
+                context.fall_sequence_detected = False
+                context.had_falling_phase = False
+                context.has_alerted = False
+
 
 if __name__ == "__main__":
-    print("Testing State Machine...")
+    print("Testing RECALL-OPTIMIZED State Machine...")
+    
+    from scoring import FallScoreComponents
+    from features import PoseFeatures
+    
     fsm = FallStateMachine()
     ctx = StateMachineContext()
     
-    # 1. Simulate Normal
-    s_normal = FallScoreComponents(total_score=0.1)
-    state = fsm.update(s_normal, ctx)
-    print(f"Frame 1 (0.1): {state.value}")
+    print("\n=== Test: Moderate Fall (should now detect) ===")
     
-    # 2. Simulate Sudden Drop (Falling)
-    s_drop = FallScoreComponents(sudden_drop_score=0.8, total_score=0.6)
-    state = fsm.update(s_drop, ctx)
-    print(f"Frame 2 (Drop): {state.value}")
+    # Normal
+    for i in range(5):
+        scores = FallScoreComponents(total_score=0.15)
+        features = PoseFeatures(velocity_y=0.5, body_orientation=15)
+        state = fsm.update(scores, features, ctx)
+    print(f"After normal: {state.value}")
     
-    # 3. Simulate Lying after Drop (Crash)
-    s_lie = FallScoreComponents(prone_score=0.9, total_score=0.9)
-    state = fsm.update(s_lie, ctx)
-    print(f"Frame 3 (Lie): {state.value} - Alert: {ctx.has_alerted}")
+    # Moderate drop (was missing before)
+    for i in range(3):
+        scores = FallScoreComponents(
+            sudden_drop_score=0.45,  # Moderate
+            total_score=0.50
+        )
+        features = PoseFeatures(
+            normalized_drop_velocity=0.04,
+            velocity_y=5.0,
+            body_orientation=30
+        )
+        state = fsm.update(scores, features, ctx)
+    print(f"After drop: {state.value}")
     
-    # 4. Simulate Recovery
-    s_rec = FallScoreComponents(total_score=0.1, prone_score=0.1)
-    # Fast forward
-    for _ in range(30): fsm.update(s_rec, ctx)
-    print(f"Frame 40 (Recovered): {ctx.current_state.value}")
+    # Prone
+    for i in range(8):
+        scores = FallScoreComponents(
+            prone_score=0.60,
+            total_score=0.55
+        )
+        features = PoseFeatures(
+            velocity_y=0.8,
+            body_orientation=65,
+            bbox_aspect_ratio=0.7
+        )
+        state = fsm.update(scores, features, ctx)
+    
+    print(f"Final state: {state.value}")
+    print(f"Alert triggered: {ctx.has_alerted}")
+    print(f"Alert reason: {ctx.alert_reason}")
+    
+    if state == State.LYING and ctx.has_alerted:
+        print("✓ SUCCESS: Moderate fall now detected!")
+    else:
+        print("✗ FAIL: Still missing moderate falls")

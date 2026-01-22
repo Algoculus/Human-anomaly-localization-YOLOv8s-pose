@@ -1,5 +1,5 @@
 """
-Evaluation Script
+Evaluation Script - Fixed for Enhanced Metrics
 
 Runs the full evaluation pipeline:
 1. Runs inference on the test set (or full dataset)
@@ -41,13 +41,13 @@ def evaluate_set(name: str,
     # 1. Run inference
     for seq in tqdm(sequences, desc=f"Infer {name}"):
         try:
-            # We reuse process_sequence from run_infer script
-            # It returns a DataFrame of frame-level results
             df = process_sequence(seq, config, set_dir, save_video=generate_video)
             if df is not None:
                 results_list.append(df)
         except Exception as e:
             logger.error(f"Error processing {seq.sequence_id}: {e}")
+            import traceback
+            traceback.print_exc()
             
     if not results_list:
         logger.warning(f"No results for {name} set")
@@ -61,76 +61,109 @@ def evaluate_set(name: str,
     evaluator = Evaluator(config.dataset.fps)
     
     # Frame-level
-    cls_metrics = evaluator.classification_metrics(
-        all_results['gt_label'].values,
-        all_results['fall_score'].values,
-        (all_results['pred_state'] == 'LYING').astype(int).values # Binary pred
-    )
+    y_true = all_results['gt_label'].values
+    y_score = all_results['fall_score'].values
+    y_pred_binary = (all_results['pred_state'] == 'LYING').astype(int).values
+    
+    cls_metrics = evaluator.classification_metrics(y_true, y_score, y_pred_binary)
     
     # Event-level
-    evt_metrics = evaluator.event_metrics(
-        all_results, 
-        [s.sequence_id for s in sequences]
-    )
+    sequence_ids = [s.sequence_id for s in sequences]
+    evt_metrics = evaluator.event_metrics(all_results, sequence_ids)
     
-    # 3. Generate Plots (Save to centralized output/plots)
+    # 3. Generate Plots
     config.paths.output_plots.mkdir(parents=True, exist_ok=True)
     plotter = Plotter(config.paths.output_plots)
-
-    # Calculate Specificity
-    tn, fp, fn, tp = cls_metrics.conf_matrix.ravel()
-    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
     
-    # 2b. Plot Evaluation Metrics Bar Chart
+    # Metrics bar chart
     metrics_dict = {
         'Accuracy': cls_metrics.accuracy,
         'Precision': cls_metrics.precision,
         'Recall': cls_metrics.recall,
-        'Specificity': specificity,
+        'Specificity': cls_metrics.specificity,
         'F1-Score': cls_metrics.f1
     }
     plotter.plot_evaluation_metrics(metrics_dict, title=f"Evaluation Metrics - {name}")
-
-    # 3. Generate Plots
-    # ROC/PR
-    plotter.plot_roc_curve(all_results['gt_label'].values, 
-                           all_results['fall_score'].values, 
-                           cls_metrics.roc_auc, title=f"ROC - {name}")
-    plotter.plot_pr_curve(all_results['gt_label'].values, 
-                          all_results['fall_score'].values, 
-                          cls_metrics.pr_auc, title=f"PR - {name}")
+    
+    # ROC/PR curves
+    plotter.plot_roc_curve(y_true, y_score, cls_metrics.roc_auc, title=f"ROC - {name}")
+    plotter.plot_pr_curve(y_true, y_score, cls_metrics.pr_auc, title=f"PR - {name}")
     plotter.plot_confusion_matrix(cls_metrics.conf_matrix)
     
-    # Plot timelines for True Positives (Falls)
+    # Plot timelines for detected falls (first 5)
     fall_seqs = [s for s in sequences if s.sequence_type == 'fall']
-    for seq in fall_seqs[:5]: # Plot first 5 falls
-        seq_df = all_results[all_results['sequence'] == seq.sequence_id]
-        if not seq_df.empty:
-            plotter.plot_timeline(seq_df, seq.sequence_id)
-            
-    # 4. Log Summary
-    summary = (
-        f"\n--- {name} Results ---\n"
-        f"Frame-level:\n"
-        f"  Accuracy: {cls_metrics.accuracy:.4f}\n"
-        f"  F1 Score: {cls_metrics.f1:.4f}\n"
-        f"  ROC AUC:  {cls_metrics.roc_auc:.4f}\n"
-        f"  Specs (Sp): {specificity:.4f}\n"
-        f"  Conf Matrix: {cls_metrics.conf_matrix.tolist()} (TN, FP | FN, TP)\n"
-        f"Event-level:\n"
-        f"  Detected Falls (TP): {evt_metrics.tp_events}/{evt_metrics.tp_events + evt_metrics.fn_events}\n"
-        f"  False Alarms (FP):   {evt_metrics.fp_events}\n"
-        f"  Recall:              {evt_metrics.recall:.4f}\n"
-        f"  Avg Delay:           {evt_metrics.avg_delay_seconds:.3f}s\n"
-        f"  False Alarm Rate:    {evt_metrics.false_alarm_rate_per_hour:.2f} alarms/hour\n"
-        f"  Total Duration:      {evt_metrics.total_test_duration_hours * 60:.1f} minutes\n"
-    )
-    logger.info(summary)
+    detected_falls = all_results[all_results['pred_state'] == 'LYING']['sequence'].unique()
     
-    # Save text report
-    with open(set_dir / "report.txt", "w") as f:
-        f.write(summary)
- 
+    for seq in fall_seqs[:5]:
+        if seq.sequence_id in detected_falls:
+            seq_df = all_results[all_results['sequence'] == seq.sequence_id]
+            if not seq_df.empty:
+                plotter.plot_timeline(seq_df, seq.sequence_id)
+    
+    # 4. Generate and save report
+    report = evaluator.generate_report(cls_metrics, evt_metrics, name)
+    logger.info(report)
+    
+    with open(set_dir / "evaluation_report.txt", "w") as f:
+        f.write(report)
+    
+    # 5. Additional analysis - Activity breakdown
+    if 'activity_type' in all_results.columns:
+        activity_stats = all_results.groupby('activity_type').agg({
+            'fall_score': ['mean', 'std', 'max'],
+            'pred_state': lambda x: (x == 'LYING').sum()
+        }).round(3)
+        
+        logger.info(f"\n{'='*60}")
+        logger.info(f"Activity Type Breakdown:")
+        logger.info(f"{'='*60}")
+        logger.info(f"\n{activity_stats}")
+        
+        activity_stats.to_csv(set_dir / "activity_breakdown.csv")
+    
+    # 6. Save detailed metrics as JSON
+    import json
+    
+    metrics_summary = {
+        'frame_level': {
+            'accuracy': float(cls_metrics.accuracy),
+            'precision': float(cls_metrics.precision),
+            'recall': float(cls_metrics.recall),
+            'specificity': float(cls_metrics.specificity),
+            'f1': float(cls_metrics.f1),
+            'balanced_accuracy': float(cls_metrics.balanced_accuracy),
+            'roc_auc': float(cls_metrics.roc_auc),
+            'pr_auc': float(cls_metrics.pr_auc),
+            'fpr': float(cls_metrics.false_positive_rate),
+            'fnr': float(cls_metrics.false_negative_rate)
+        },
+        'event_level': {
+            'tp': int(evt_metrics.tp_events),
+            'fp': int(evt_metrics.fp_events),
+            'fn': int(evt_metrics.fn_events),
+            'tn': int(evt_metrics.tn_events),
+            'precision': float(evt_metrics.precision),
+            'recall': float(evt_metrics.recall),
+            'specificity': float(evt_metrics.specificity),
+            'f1': float(evt_metrics.f1),
+            'avg_delay_sec': float(evt_metrics.avg_detection_delay_seconds),
+            'median_delay_sec': float(evt_metrics.median_detection_delay_seconds),
+            'max_delay_sec': float(evt_metrics.max_detection_delay_seconds),
+            'false_alarm_rate': float(evt_metrics.false_alarm_rate_per_hour),
+            'test_duration_hours': float(evt_metrics.total_test_duration_hours)
+        }
+    }
+    
+    if evt_metrics.activity_breakdown:
+        metrics_summary['activity_breakdown'] = evt_metrics.activity_breakdown
+    
+    with open(set_dir / "metrics_summary.json", "w") as f:
+        json.dump(metrics_summary, f, indent=2)
+    
+    logger.info(f"\nDetailed metrics saved to: {set_dir / 'metrics_summary.json'}")
+    
+    return cls_metrics, evt_metrics
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--split", action="store_true", help="Use Train/Val/Test split")
@@ -142,6 +175,7 @@ def main():
     
     config = get_config()
     output_dir = Path(args.output)
+    output_dir.mkdir(parents=True, exist_ok=True)
     
     if args.full:
         # Evaluate on everything as one block
@@ -153,11 +187,25 @@ def main():
         train, val, test = get_train_val_test_split(config, random_seed=42)
         
         if not args.test_only:
-            # Maybe skip train evaluation to save time?
-            # evaluate_set("train", train, config, output_dir, args.video)
+            logger.info("Evaluating validation set...")
             evaluate_set("val", val, config, output_dir, args.video)
+        
+        logger.info("Evaluating test set...")
+        test_metrics = evaluate_set("test", test, config, output_dir, args.video)
+        
+        if test_metrics:
+            cls_metrics, evt_metrics = test_metrics
             
-        evaluate_set("test", test, config, output_dir, args.video)
+            # Print summary to console
+            logger.info(f"\n{'='*70}")
+            logger.info(f"FINAL TEST SET PERFORMANCE")
+            logger.info(f"{'='*70}")
+            logger.info(f"Frame-level Accuracy: {cls_metrics.accuracy:.1%}")
+            logger.info(f"Event-level Recall:   {evt_metrics.recall:.1%}")
+            logger.info(f"Event-level Precision: {evt_metrics.precision:.1%}")
+            logger.info(f"Detection Delay:      {evt_metrics.avg_detection_delay_seconds:.2f}s")
+            logger.info(f"False Alarms/hour:    {evt_metrics.false_alarm_rate_per_hour:.2f}")
+            logger.info(f"{'='*70}")
 
 if __name__ == "__main__":
     main()

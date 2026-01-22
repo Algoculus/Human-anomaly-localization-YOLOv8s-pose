@@ -1,188 +1,413 @@
 """
-Fall Scoring Module
+RECALL-OPTIMIZED Fall Scoring
 
-Calculates the risk of a fall based on extracted features.
-Implements the weighted sum of score components with adaptive weights:
-FALL_SCORE(t) = w_drop * S_drop + w_prone * S_prone + w_impact * S_impact + w_lie * S_lie
+Changes:
+- Lower thresholds for drop/impact detection
+- Reduced activity penalties
+- More generous prone scoring
+- Prioritize recall over precision
 """
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List
 import numpy as np
 from loguru import logger
 
 from .features import PoseFeatures
 from config import Config, get_config, FallScoreConfig
 
+
 @dataclass
 class FallScoreComponents:
-    """Individual components of the full fall score."""
+    """Score components"""
     sudden_drop_score: float = 0.0
     prone_score: float = 0.0
     impact_score: float = 0.0
     sustained_lying_score: float = 0.0
+    activity_penalty: float = 0.0
+    confidence_factor: float = 1.0
     total_score: float = 0.0
-    confidence: float = 1.0  # Overall confidence in the score
+    triggering_factors: List[str] = None
+    
+    def __post_init__(self):
+        if self.triggering_factors is None:
+            self.triggering_factors = []
+
 
 def sigmoid(x: float, k: float = 10.0, x0: float = 0.5) -> float:
-    """Sigmoid function for soft thresholding."""
+    """Sigmoid activation"""
     return 1.0 / (1.0 + np.exp(-k * (x - x0)))
 
+
 class FallScorer:
-    """
-    Computes fall risk scores with adaptive weighting.
-    """
+    """RECALL-OPTIMIZED Fall Scorer"""
     
     def __init__(self, config: Optional[Config] = None):
         self.config = config or get_config()
         self.params: FallScoreConfig = self.config.fall_score
         
+        # ==== LOWERED THRESHOLDS FOR RECALL ====
+        self.FAST_DROP_THRESHOLD = 0.04       # Lowered from 0.05
+        self.MEDIUM_DROP_THRESHOLD = 0.020    # Lowered from 0.025
+        self.SLOW_DROP_THRESHOLD = 0.012      # Lowered from 0.015
+        
+        self.HIGH_IMPACT_THRESHOLD = 2.2      # Lowered from 2.5
+        self.MEDIUM_IMPACT_THRESHOLD = 1.8    # Lowered from 2.0
+        
+        self.LYING_ORIENTATION = 55           # Lowered from 60
+        self.PRONE_ASPECT_RATIO = 0.85        # Increased from 0.8
+        
+        logger.warning("⚠️ RECALL MODE: Using relaxed thresholds")
+        
     def calculate(self, features: PoseFeatures) -> FallScoreComponents:
-        """
-        Compute fall score components from input features.
-        Uses adaptive weights when certain sensors are unavailable.
-        """
+        """Calculate fall scores - RECALL OPTIMIZED"""
+        
         components = FallScoreComponents()
         
-        # Track which sensors are available for adaptive weighting
+        # Assess data quality
         has_accelerometer = features.acc_sv_total is not None
-        has_depth = features.depth_hw_ratio is not None or features.p40 is not None
-        has_good_pose = features.keypoints_conf_mean > 0.5
+        has_depth = features.depth_hw_ratio is not None
+        has_good_pose = features.keypoints_conf_mean > 0.4  # Lowered from 0.5
         
-        # Set confidence based on data quality
-        components.confidence = features.keypoints_conf_mean if has_good_pose else 0.3
+        components.confidence_factor = self._calculate_confidence(
+            features.keypoints_conf_mean,
+            has_accelerometer,
+            has_depth
+        )
         
-        # ========== 1. Sudden Drop Score ==========
-        if features.normalized_drop_velocity > 0:  # Downward movement
-            velocity = features.normalized_drop_velocity
+        # === Score Components ===
+        components.sudden_drop_score = self._score_sudden_drop(features)
+        components.impact_score = self._score_impact(features)
+        components.prone_score = self._score_prone_position(features)
+        components.sustained_lying_score = self._score_sustained_lying(features)
+        
+        # REDUCED activity penalty for recall
+        components.activity_penalty = self._calculate_activity_penalty(features) * 0.5
+        
+        # === Combine with recall-friendly weights ===
+        components.total_score = self._combine_scores(
+            components,
+            features,
+            has_accelerometer,
+            has_depth,
+            has_good_pose
+        )
+        
+        components.triggering_factors = self._identify_triggers(components, features)
+        
+        return components
+    
+    def _calculate_confidence(self, pose_conf: float, has_acc: bool, has_depth: bool) -> float:
+        """Calculate confidence - more lenient"""
+        confidence = max(pose_conf, 0.5)  # Minimum 0.5
+        
+        if has_acc:
+            confidence = min(1.0, confidence * 1.1)
+        if has_depth:
+            confidence = min(1.0, confidence * 1.1)
+        
+        return confidence
+    
+    def _score_sudden_drop(self, features: PoseFeatures) -> float:
+        """Score drop - MORE SENSITIVE"""
+        
+        score = 0.0
+        
+        if features.normalized_drop_velocity > 0:
+            vel = features.normalized_drop_velocity
+            acc = features.acceleration_y if features.acceleration_y > 0 else 0
             
-            # Three-tier velocity classification
-            if velocity < 0.015:
-                # Very slow - intentional lie-down
-                components.sudden_drop_score = 0.0
-            elif velocity > 0.05:
-                # Fast drop - definite fall indicator
-                components.sudden_drop_score = min(sigmoid(velocity, k=40.0, x0=0.04), 1.0)
+            # More generous thresholds
+            if vel >= self.FAST_DROP_THRESHOLD:
+                score = min(1.0, sigmoid(vel, k=40.0, x0=0.035))
+                if acc > 1.2:
+                    score = min(1.0, score * 1.25)
+                    
+            elif vel >= self.MEDIUM_DROP_THRESHOLD:
+                score = sigmoid(vel, k=25.0, x0=0.025)
+                if acc > 0.8:
+                    score *= 1.2
+                elif acc < 0.2:
+                    score *= 0.8  # Less penalty
+                    
+            elif vel >= self.SLOW_DROP_THRESHOLD:
+                score = sigmoid(vel, k=18.0, x0=0.015) * 0.6  # Increased from 0.5
             else:
-                # Medium velocity - gradual scoring
-                components.sudden_drop_score = sigmoid(velocity, k=25.0, x0=0.03)
+                # Still give some score for very slow drops
+                score = vel / self.SLOW_DROP_THRESHOLD * 0.15
+        
+        # Height drop check
+        if features.normalized_height < 0.35 and features.velocity_y > 2.5:
+            score = max(score, 0.5)
+        
+        return min(score, 1.0)
+    
+    def _score_impact(self, features: PoseFeatures) -> float:
+        """Score impact - MORE SENSITIVE"""
+        
+        if features.acc_sv_total is None:
+            return 0.0
+        
+        sv = features.acc_sv_total
+        
+        # Lowered thresholds
+        if sv >= self.HIGH_IMPACT_THRESHOLD:
+            score = min(1.0, sigmoid(sv, k=3.0, x0=2.0))
+        elif sv >= self.MEDIUM_IMPACT_THRESHOLD:
+            score = sigmoid(sv, k=5.0, x0=1.9)
+            if features.is_lying_pose:
+                score *= 1.3
+        elif sv >= 1.3:  # Lowered from 1.5
+            score = 0.35 * sigmoid(sv, k=4.0, x0=1.5)
         else:
-            components.sudden_drop_score = 0.0
-            
-        # ========== 2. Prone Score (Multi-source fusion) ==========
-        prone_signals = []
+            score = 0.0
         
-        # 2a. Orientation signal (from spine angle)
-        if has_good_pose:
-            s_orient = sigmoid(features.body_orientation, k=0.15, x0=40.0)
-            prone_signals.append(('orient', s_orient, 0.4))
+        # Delta bonus
+        if features.acc_delta is not None and features.acc_delta > 0.8:
+            score = min(1.0, score * 1.2)
         
-        # 2b. Aspect Ratio signal (prefer depth if available)
-        ar = features.depth_hw_ratio if has_depth else features.bbox_aspect_ratio
-        if ar is not None:
-            # H/W < 1.0 means lying (wider than tall)
-            s_ar = 1.0 - sigmoid(ar, k=6.0, x0=1.0)
-            prone_signals.append(('aspect', s_ar, 0.3))
+        return min(score, 1.0)
+    
+    def _score_prone_position(self, features: PoseFeatures) -> float:
+        """Score prone - MORE GENEROUS"""
         
-        # 2c. Floor proximity signals (depth sensors)
-        if features.p40 is not None and features.p40 > 0.2:
-            s_floor = sigmoid(features.p40, k=6.0, x0=0.35)
-            prone_signals.append(('p40', s_floor, 0.5))  # High weight - reliable
-            
+        signals = []
+        
+        # === Depth signals ===
+        if features.depth_hw_ratio is not None:
+            if features.depth_hw_ratio < 0.75:  # Relaxed from 0.65
+                s = 1.0 - sigmoid(features.depth_hw_ratio, k=6.0, x0=0.85)
+                signals.append(('depth_hw', s, 0.45, True))
+            else:
+                s = 0.35 * (1.0 - sigmoid(features.depth_hw_ratio, k=5.0, x0=1.1))
+                signals.append(('depth_hw', s, 0.30, True))
+        
+        if features.p40 is not None:
+            if features.p40 > 0.25:  # Lowered from 0.30
+                s = sigmoid(features.p40, k=7.0, x0=0.30)
+                signals.append(('floor_proximity', s, 0.40, True))
+        
         if features.dist_to_floor_mm is not None:
-            if features.dist_to_floor_mm < 450:
-                s_dist = 1.0 - sigmoid(features.dist_to_floor_mm, k=0.008, x0=300)
-                prone_signals.append(('dist', s_dist, 0.5))
-            elif features.dist_to_floor_mm > 550:
-                # On furniture - apply penalty
-                prone_signals.append(('furniture_penalty', -0.3, 1.0))
+            if features.dist_to_floor_mm < 550:  # Increased from 500
+                s = 1.0 - sigmoid(features.dist_to_floor_mm, k=0.008, x0=400)
+                signals.append(('floor_distance', s, 0.40, True))
+            elif features.dist_to_floor_mm > 650:  # Increased threshold
+                signals.append(('furniture_penalty', -0.3, 1.0, True))
         
-        # Combine prone signals (weighted max with penalty)
-        if prone_signals:
-            positive_signals = [(s, w) for name, s, w in prone_signals if s > 0]
-            penalties = sum([s for name, s, w in prone_signals if s < 0])
+        # === Pose signals - MORE GENEROUS ===
+        if features.keypoints_conf_mean > 0.4:  # Lowered from 0.5
+            # Orientation
+            if features.body_orientation > 45:  # Lowered from 50
+                s = sigmoid(features.body_orientation, k=0.10, x0=50)
+                signals.append(('orientation', s, 0.35, False))
+            else:
+                s = max(0, 0.25 - features.body_orientation / 120)
+                signals.append(('orientation', s, 0.20, False))
             
-            if positive_signals:
-                # Take weighted average of top 2 signals
-                positive_signals.sort(key=lambda x: x[0] * x[1], reverse=True)
-                top_signals = positive_signals[:2]
-                total_weight = sum(w for s, w in top_signals)
-                components.prone_score = sum(s * w for s, w in top_signals) / total_weight if total_weight > 0 else 0
-                components.prone_score = max(0.0, components.prone_score + penalties)
-            else:
-                components.prone_score = 0.0
-        else:
-            components.prone_score = 0.0
-
-        # ========== 3. Impact Score (Accelerometer) ==========
-        if has_accelerometer:
-            # Normal walking: 1.0-1.5g, Fall impact: > 2.0g
-            components.impact_score = sigmoid(
-                features.acc_sv_total, 
-                k=self.params.impact_sigmoid_k, 
-                x0=self.params.impact_sv_threshold
-            )
-        else:
-            components.impact_score = 0.0
-
-        # ========== 4. Sustained Lying Score ==========
-        is_still = abs(features.velocity_y) < 2.5 and abs(features.orientation_velocity) < 3.0
+            # Aspect ratio
+            ar = features.bbox_aspect_ratio
+            if ar < 0.95:  # Relaxed from 0.85
+                s = 1.0 - sigmoid(ar, k=6.0, x0=1.0)
+                signals.append(('aspect_ratio', s, 0.30, False))
+            
+            # Hip height
+            if features.hip_height_ratio < 0.40:  # Increased from 0.35
+                s = 1.0 - sigmoid(features.hip_height_ratio, k=12.0, x0=0.30)
+                signals.append(('hip_height', s, 0.35, False))
+            elif features.hip_height_ratio < 0.60 and features.body_orientation < 40:
+                signals.append(('bending_penalty', -0.2, 0.4, False))  # Reduced penalty
         
-        if components.prone_score > 0.6:
-            if is_still:
-                components.sustained_lying_score = 1.0
+        # === Combine - favor highest signals ===
+        if not signals:
+            return 0.0
+        
+        positive_signals = [(name, s, w) for name, s, w, _ in signals if s > 0]
+        penalties = sum([s for name, s, w, _ in signals if s < 0])
+        
+        if not positive_signals:
+            return max(0.0, penalties)
+        
+        # Take top 3 signals instead of top 2
+        positive_signals.sort(key=lambda x: x[1] * x[2], reverse=True)
+        top_signals = positive_signals[:3]
+        total_weight = sum(w for _, _, w in top_signals)
+        score = sum(s * w for _, s, w in top_signals) / total_weight if total_weight > 0 else 0
+        
+        # Reduced penalty impact
+        final_score = max(0.0, score + penalties * 0.7)
+        
+        return min(final_score, 1.0)
+    
+    def _score_sustained_lying(self, features: PoseFeatures) -> float:
+        """Score sustained lying - RELAXED"""
+        
+        score = 0.0
+        
+        if features.is_lying_pose or features.body_orientation > 50:
+            # Relaxed stillness check
+            is_still_vertical = abs(features.velocity_y) < 2.2
+            is_still_horizontal = abs(features.velocity_x) < 2.5
+            is_orientation_stable = abs(features.orientation_velocity) < 3.5
+            
+            stillness_score = (
+                0.4 * (1.0 if is_still_vertical else 0.4) +
+                0.3 * (1.0 if is_still_horizontal else 0.4) +
+                0.3 * (1.0 if is_orientation_stable else 0.3)
+            )
+            
+            pose_stable = features.pose_stability > 0.65  # Lowered from 0.75
+            
+            if stillness_score > 0.65 and pose_stable:
+                score = 1.0
+            elif stillness_score > 0.50:
+                score = 0.75
+            elif stillness_score > 0.35:
+                score = 0.5
             else:
-                # Moving while prone - might be trying to get up
-                components.sustained_lying_score = 0.4
-        elif components.prone_score > 0.4 and is_still:
-            components.sustained_lying_score = 0.5
-        else:
-            components.sustained_lying_score = 0.0
-
-        # ========== Adaptive Weighted Sum ==========
-        # Adjust weights based on sensor availability and triggers
+                score = 0.3
+        
+        return score
+    
+    def _calculate_activity_penalty(self, features: PoseFeatures) -> float:
+        """Activity penalty - MUCH REDUCED for recall"""
+        
+        penalty = 0.0
+        activity = features.activity_type
+        
+        # Only penalize very clear bending
+        if activity == "BENDING":
+            if features.knee_bend_angle < 110 and abs(features.velocity_y) < 1.5:
+                penalty = -0.25  # Reduced from -0.4
+        
+        # Very slow intentional lying
+        elif activity == "LYING_STILL":
+            if abs(features.velocity_y) < 1.0 and abs(features.orientation_velocity) < 3.0:
+                penalty = -0.15  # Reduced from -0.25
+        
+        # Clear walking only
+        elif activity == "WALKING":
+            if not features.is_lying_pose and features.hip_height_ratio > 0.6:
+                penalty = -0.3  # Reduced from -0.5
+        
+        # Sitting - reduced penalty
+        if 0.35 < features.hip_height_ratio < 0.65 and features.pose_stability > 0.85:
+            if abs(features.velocity_y) < 1.0:
+                penalty = min(penalty, -0.2)  # Reduced from -0.3
+        
+        return penalty
+    
+    def _combine_scores(self, 
+                       components: FallScoreComponents,
+                       features: PoseFeatures,
+                       has_acc: bool,
+                       has_depth: bool,
+                       has_good_pose: bool) -> float:
+        """Combine scores - RECALL OPTIMIZED"""
+        
         w_drop = self.params.weight_sudden_drop
         w_prone = self.params.weight_prone
         w_impact = self.params.weight_impact
         w_sustained = self.params.weight_sustained_lying
         
-        # Kwolek & Kepski Logic: Impact triggers specific pose checks
-        # If High Impact detected, prioritize Prone Score verification
-        if components.impact_score > 0.6:
-            w_prone = 0.6  # Boost prone weight significantly
-            w_drop = 0.1   # Drop is less relevant after impact
-            w_sustained = 0.1
-            w_impact = 0.2
-            
-            # Boost prone sensitivity if impact occurred
-            if components.prone_score > 0.4:
-                components.prone_score = min(components.prone_score * 1.3, 1.0)
-                
-        # If no accelerometer, redistribute impact weight
-        elif not has_accelerometer:
+        # === Redistribute weights for recall ===
+        if not has_acc:
             w_prone += w_impact * 0.6
-            w_sustained += w_impact * 0.4
+            w_sustained += w_impact * 0.25
+            w_drop += w_impact * 0.15
             w_impact = 0.0
+        
+        # Boost prone weight more aggressively
+        if components.impact_score > 0.5:
+            w_prone = 0.60
+            w_impact = 0.25
+            w_sustained = 0.10
+            w_drop = 0.05
             
-        # If poor pose quality, boost depth-based prone weight
-        if not has_good_pose and has_depth:
-            w_prone *= 1.2
-            w_drop *= 0.5
+            if components.prone_score > 0.35:  # Lowered from 0.5
+                components.prone_score = min(1.0, components.prone_score * 1.25)
         
-        # Normalize weights
+        # Boost if sequence detected
+        has_drop = components.sudden_drop_score > 0.30  # Lowered from 0.4
+        has_impact = components.impact_score > 0.40     # Lowered from 0.5
+        has_prone = components.prone_score > 0.45       # Lowered from 0.6
+        
+        if (has_drop or has_impact) and has_prone:
+            components.sudden_drop_score = min(1.0, components.sudden_drop_score * 1.10)
+            components.prone_score = min(1.0, components.prone_score * 1.10)
+            if has_impact:
+                components.impact_score = min(1.0, components.impact_score * 1.10)
+        
+        # Normalize
         total_weight = w_drop + w_prone + w_impact + w_sustained
+        if total_weight == 0:
+            return 0.0
         
-        total = (
+        # Weighted sum
+        score = (
             (w_drop / total_weight) * components.sudden_drop_score +
             (w_prone / total_weight) * components.prone_score +
             (w_impact / total_weight) * components.impact_score +
             (w_sustained / total_weight) * components.sustained_lying_score
         )
         
-        # Apply confidence penalty for low-quality poses
-        if components.confidence < 0.5:
-            total *= 0.8 + 0.4 * components.confidence  # Scale down uncertain scores
+        # Apply reduced penalty
+        score = max(0.0, score + components.activity_penalty)
         
-        components.total_score = min(max(total, 0.0), 1.0)  # Clip 0-1
+        # Less harsh confidence penalty
+        if components.confidence_factor < 0.6:
+            score *= (0.8 + 0.4 * components.confidence_factor)
         
-        return components
+        return min(max(score, 0.0), 1.0)
+    
+    def _identify_triggers(self, components: FallScoreComponents, features: PoseFeatures) -> List[str]:
+        """Identify triggers"""
+        triggers = []
+        
+        if components.sudden_drop_score > 0.35:
+            triggers.append(f"Drop ({features.normalized_drop_velocity:.3f})")
+        
+        if components.impact_score > 0.40:
+            triggers.append(f"Impact ({features.acc_sv_total:.2f}g)")
+        
+        if components.prone_score > 0.45:
+            triggers.append(f"Prone ({features.body_orientation:.0f}°)")
+        
+        if components.sustained_lying_score > 0.60:
+            triggers.append("Sustained")
+        
+        if abs(components.activity_penalty) > 0.15:
+            triggers.append(f"Activity: {features.activity_type}")
+        
+        return triggers
+
+
+if __name__ == "__main__":
+    print("Testing RECALL-OPTIMIZED Scorer...")
+    
+    from features import PoseFeatures
+    scorer = FallScorer()
+    
+    # Test moderate fall
+    print("\n=== Moderate Fall (should score higher now) ===")
+    moderate_fall = PoseFeatures(
+        normalized_drop_velocity=0.035,  # Moderate
+        acceleration_y=1.5,
+        body_orientation=60,
+        bbox_aspect_ratio=0.75,
+        hip_height_ratio=0.25,
+        velocity_y=4.0,
+        pose_stability=0.85,
+        keypoints_conf_mean=0.75
+    )
+    
+    result = scorer.calculate(moderate_fall)
+    print(f"Total Score: {result.total_score:.3f}")
+    print(f"  Drop: {result.sudden_drop_score:.3f}")
+    print(f"  Prone: {result.prone_score:.3f}")
+    print(f"  Sustained: {result.sustained_lying_score:.3f}")
+    print(f"Triggers: {', '.join(result.triggering_factors)}")
+    
+    if result.total_score > 0.45:
+        print("✓ Moderate falls now detected!")
+    else:
+        print(f"✗ Still too low: {result.total_score:.3f}")
