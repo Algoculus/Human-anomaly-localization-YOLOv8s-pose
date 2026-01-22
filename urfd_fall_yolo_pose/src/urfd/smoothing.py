@@ -2,20 +2,9 @@ import numpy as np
 from .rules import check_fall_candidate, check_lying_posture
 
 class FallStateMachine:
-    """State machine for temporal smoothing of fall detection with tolerance.
-    
-    States:
-    - NORMAL: No fall detected
-    - CANDIDATE: Potential fall detected, awaiting confirmation
-    - FALL_CONFIRMED: Fall confirmed
-    """
+    # State machine: NORMAL -> CANDIDATE -> FALL_CONFIRMED (with recovery)
     
     def __init__(self, config):
-        """Initialize state machine.
-        
-        Args:
-            config: Configuration dict with thresholds
-        """
         self.config = config
         self.state = "NORMAL"
         
@@ -37,14 +26,7 @@ class FallStateMachine:
         self.motion_settled = False  # Flag for settled motion after lying
     
     def _compute_height_drop(self, current_height):
-        """Compute normalized height drop.
-        
-        Args:
-            current_height: Current bbox height
-        
-        Returns:
-            height_drop: Normalized height drop in [0, 1]
-        """
+        # Compute normalized height drop [0, 1]
         if current_height is None:
             return 0.0
         
@@ -357,7 +339,7 @@ class FallStateMachine:
                 self.candidate_history = []
                 self.confirm_history = []
                 self.recovery_history = []  # Clear recovery history
-                print("✅ RECOVERY DETECTED: Person stood up, resetting to NORMAL state")
+                print("[RECOVERY] Person stood up, resetting to NORMAL state")
             else:
                 # Stay confirmed and keep score at 1.0
                 self.score_accumulator = 1.0

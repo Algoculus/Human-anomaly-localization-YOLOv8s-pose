@@ -54,7 +54,7 @@ class ConnectionManager:
             "connected_at": datetime.utcnow().isoformat()
         }
         
-        print(f"✅ {role.upper()} connected: {device_id} in room {room_id}")
+        print(f"[CONNECTED] {role.upper()} connected: {device_id} in room {room_id}")
         
         # Send welcome message
         await websocket.send_json({
@@ -91,7 +91,7 @@ class ConnectionManager:
         # Remove metadata
         del self.connections[websocket]
         
-        print(f"❌ {role.upper()} disconnected: {metadata['device_id']} from room {room_id}")
+        print(f"[DISCONNECTED] {role.upper()} disconnected: {metadata['device_id']} from room {room_id}")
     
     def _check_frame_rate(self, session_id: str) -> bool:
         """Check if frame rate is within limits"""
@@ -174,7 +174,7 @@ class ConnectionManager:
                 "latency": latency_ms
             }
             
-            print(f"📤 Sending telemetry: frameId={frame_id}, state={result['state']}, score={result['score']:.2f}, bbox={result['bbox']}, keypoints_count={len(result.get('keypoints', [])) if result.get('keypoints') else 0}")
+            print(f"[TELEMETRY] Sending telemetry: frameId={frame_id}, state={result['state']}, score={result['score']:.2f}, bbox={result['bbox']}, keypoints_count={len(result.get('keypoints', [])) if result.get('keypoints') else 0}")
             
             await websocket.send_json(telemetry_data)
             
@@ -191,7 +191,7 @@ class ConnectionManager:
         
         except Exception as e:
             import traceback
-            print(f"❌ Error processing frame: {e}")
+            print(f"[ERROR] Error processing frame: {e}")
             print(f"Stack trace: {traceback.format_exc()}")
             await websocket.send_json({
                 "type": "error",

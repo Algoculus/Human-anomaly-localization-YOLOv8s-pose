@@ -1,3 +1,116 @@
-data
-urfd_fall_yolo_pose/outputs/ADL
-urfd_fall_yolo_pose/outputs/FALL
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+*.log
+
+# Virtual Environments
+venv/
+ENV/
+env/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter
+.ipynb_checkpoints
+*.ipynb
+
+# Model files (exclude large weights)
+*.pt
+*.pth
+*.onnx
+*.weights
+*.caffemodel
+!yolov8s-pose.pt
+
+# Data and outputs
+data/
+urfd_fall_yolo_pose/outputs/ADL/
+urfd_fall_yolo_pose/outputs/FALL/
+urfd_fall_yolo_pose/outputs/*.csv
+urfd_fall_yolo_pose/outputs/*.json
+urfd_fall_yolo_pose/runs/
+outputs/
+artifacts/
+runs/
+*.csv
+!*_index.csv
+!urfd_*.csv
+!requirements.txt
+
+# Backend artifacts
+web/backend/artifacts/
+
+# Environment variables
+.env
+.env.local
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Media files (large video/image files)
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.jpg
+*.jpeg
+*.png
+!docs/**/*.png
+!docs/**/*.jpg
+!README*.png
+!README*.jpg
+
+# Compressed files
+*.zip
+*.tar.gz
+*.rar
+
+# Node modules (frontend)
+node_modules/

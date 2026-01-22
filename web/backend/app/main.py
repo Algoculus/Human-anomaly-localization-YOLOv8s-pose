@@ -29,10 +29,10 @@ Path(settings.artifact_dir).mkdir(parents=True, exist_ok=True)
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
     # Startup
-    print(f"🚀 Starting {settings.app_name} v{settings.version}")
-    print(f"📁 Core AI path: {CORE_AI_PATH}")
-    print(f"🌍 Environment: {settings.app_env}")
-    print(f"🔗 Allowed origins: {settings.allowed_origins}")
+    print(f"[STARTUP] Starting {settings.app_name} v{settings.version}")
+    print(f"[CORE_AI] Core AI path: {CORE_AI_PATH}")
+    print(f"[ENV] Environment: {settings.app_env}")
+    print(f"[CORS] Allowed origins: {settings.allowed_origins}")
     
     yield
     

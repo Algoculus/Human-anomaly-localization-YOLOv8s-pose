@@ -48,6 +48,8 @@ def compute_frame_features(detections, keypoint_conf_thres, dy_window, history, 
         "dy": 0.0,
         "dy_velocity": 0.0,
         "dy_peak": 0.0,
+        "dy_acceleration": 0.0,  # New: acceleration for slow fall detection
+        "dy_smoothed": 0.0,  # New: temporal smoothing for noise reduction
         "detections": detections
     }
     
@@ -161,6 +163,13 @@ def compute_frame_features(detections, keypoint_conf_thres, dy_window, history, 
                 features["dy_peak"] = max(dy_inst_samples)
                 # dy_velocity: average instantaneous velocity
                 features["dy_velocity"] = np.mean(dy_inst_samples)
+                # Temporal smoothing: exponential moving average (alpha=0.3 for responsiveness)
+                features["dy_smoothed"] = 0.7 * features["dy_velocity"] + 0.3 * abs(dy_inst)
+            
+            # Compute acceleration (change in velocity)
+            if len(history) >= 2:
+                prev_dy = history[-1].get("dy", 0.0)
+                features["dy_acceleration"] = abs(dy_inst - prev_dy)
     
     # Fallback for first frame or missing cy in window
     if len(history) >= dy_window and features["dy"] == 0.0:

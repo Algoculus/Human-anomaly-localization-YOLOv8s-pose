@@ -1,6 +1,4 @@
-"""
-Video Upload & Offline Processing
-"""
+# Video Upload & Offline Processing
 from fastapi import APIRouter, File, UploadFile, HTTPException, BackgroundTasks
 from app.core.config import get_settings
 from pathlib import Path
@@ -18,23 +16,9 @@ async def upload_video(
     file: UploadFile = File(...),
     background_tasks: BackgroundTasks = None
 ):
-    """
-    Upload a video file for offline fall detection processing.
-    
-    Returns:
-    - jobId: Unique identifier for this processing job
-    - status: "queued"
-    - message: Confirmation message
-    
-    Processing happens in background:
-    1. Save uploaded video
-    2. Run inference using core AI (infer_sequence.py)
-    3. Generate overlay video with bounding boxes and state labels
-    4. Compute metrics (true positives, false positives, etc.)
-    5. Save results to artifacts directory
-    
-    Client can poll GET /upload/{jobId} to check status.
-    """
+    # Upload video for offline fall detection processing
+    # Returns: jobId, status="queued", message
+    # Client polls GET /upload/{jobId} to check status
     
     # Validate file type
     allowed_extensions = [".mp4", ".avi", ".mov", ".mkv"]
