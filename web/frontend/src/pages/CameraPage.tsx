@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Video, Play, Pause, AlertCircle, Activity, Wifi } from 'lucide-react'
+import { ArrowLeft, Video, Play, Pause, Activity, Wifi } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -218,6 +218,14 @@ export default function CameraPage() {
     }, 'image/jpeg', 0.8)
   }
 
+  // COCO pose skeleton connections
+  const SKELETON = [
+    [16, 14], [14, 12], [17, 15], [15, 13], [12, 13],
+    [6, 12], [7, 13], [6, 7], [6, 8], [7, 9],
+    [8, 10], [9, 11], [2, 3], [1, 2], [1, 3],
+    [2, 4], [3, 5], [4, 6], [5, 7]
+  ]
+
   const drawOverlay = () => {
     if (!canvasRef.current || !videoRef.current) return
 
@@ -247,6 +255,57 @@ export default function CameraPage() {
 
     // Draw all tracks
     data.tracks.forEach(track => {
+      // Color based on state matches backend (overlay.py)
+      let color = 'rgb(0, 255, 0)' // NORMAL - Green
+      if (track.state === 'FALL' || track.state === 'FALL_CONFIRMED') {
+        color = 'rgb(0, 0, 255)' // FALL - Red (BGR in python is (0,0,255) -> usually rendered as Red in easy tools, but let's stick to standard web Red)
+        // Wait, backend overlay.py says: COLOR_FALL = (0, 0, 255). OpenCV uses BGR. So (0,0,255) is RED in BGR.
+        // In web (RGB), Red is (255, 0, 0).
+        color = 'rgb(255, 0, 0)'
+      } else if (track.state === 'CANDIDATE') {
+        // Backend: COLOR_CANDIDATE = (0, 165, 255) -> Orange/Gold in BGR?
+        // Let's use a nice Orange for web
+        color = 'rgb(255, 165, 0)'
+      }
+
+      // Draw Keypoints and Skeleton
+      if (track.keypoints) {
+         // Draw skeleton connections
+         ctx.lineWidth = 2
+         ctx.strokeStyle = color
+         
+         SKELETON.forEach(([idx1, idx2]) => {
+            // indices are 1-based in COCO definition array above, convert to 0-based
+            const i1 = idx1 - 1
+            const i2 = idx2 - 1
+            
+            if (track.keypoints && track.keypoints[i1] && track.keypoints[i2]) {
+              const kp1 = track.keypoints[i1]
+              const kp2 = track.keypoints[i2]
+              
+              // kp format: [x, y, conf]
+              if (kp1[2] > 0.5 && kp2[2] > 0.5) {
+                 ctx.beginPath()
+                 ctx.moveTo(kp1[0] * scaleX, kp1[1] * scaleY)
+                 ctx.lineTo(kp2[0] * scaleX, kp2[1] * scaleY)
+                 ctx.stroke()
+              }
+            }
+         })
+
+         // Draw keypoint dots
+        track.keypoints.forEach(([kx, ky, conf]: number[]) => {
+          if (conf > 0.5) {
+            const skx = kx * scaleX
+            const sky = ky * scaleY
+            ctx.beginPath()
+            ctx.arc(skx, sky, 3, 0, 2 * Math.PI)
+            ctx.fillStyle = color
+            ctx.fill()
+          }
+        })
+      }
+
       if (!track.bbox) return
 
       const [x1, y1, x2, y2] = track.bbox
@@ -255,66 +314,39 @@ export default function CameraPage() {
       const w = (x2 - x1) * scaleX
       const h = (y2 - y1) * scaleY
 
-      // Color based on state
-      let color = '#22c55e' // NORMAL/STANDING
-      if (track.state === 'FALL' || track.state === 'FALL_CONFIRMED') {
-        color = '#ef4444' // Red
-      } else if (track.state === 'CANDIDATE' || track.state === 'FALL_CANDIDATE') {
-        color = '#eab308' // Yellow
-      }
-
       // Bbox
-      ctx.shadowBlur = 10
-      ctx.shadowColor = color
-      ctx.strokeStyle = color
-      ctx.lineWidth = 3
-      ctx.strokeRect(x, y, w, h)
       ctx.shadowBlur = 0
+      ctx.strokeStyle = color
+      ctx.lineWidth = 2
+      ctx.strokeRect(x, y, w, h)
 
       // Label
-      const labelHeight = 35
-      const labelWidth = 180
+      const labelHeight = 22
+      const labelText = `ID:${track.id} ${track.state} ${(track.score).toFixed(2)}`
+      
+      ctx.font = 'bold 14px sans-serif'
+      const textMetrics = ctx.measureText(labelText)
+      const labelWidth = textMetrics.width + 10
+
       ctx.fillStyle = color
-      ctx.beginPath()
+      ctx.fillRect(x, y - labelHeight, labelWidth, labelHeight)
 
-      const radius = 5
-      ctx.moveTo(x + radius, y - labelHeight - 5)
-      ctx.lineTo(x + labelWidth - radius, y - labelHeight - 5)
-      ctx.quadraticCurveTo(x + labelWidth, y - labelHeight - 5, x + labelWidth, y - labelHeight - 5 + radius)
-      ctx.lineTo(x + labelWidth, y - 5 - radius)
-      ctx.quadraticCurveTo(x + labelWidth, y - 5, x + labelWidth - radius, y - 5)
-      ctx.lineTo(x + radius, y - 5)
-      ctx.quadraticCurveTo(x, y - 5, x, y - 5 - radius)
-      ctx.lineTo(x, y - labelHeight - 5 + radius)
-      ctx.quadraticCurveTo(x, y - labelHeight - 5, x + radius, y - labelHeight - 5)
-      ctx.closePath()
-      ctx.fill()
-
-      // Text (Unmirror)
+      // Text (Unmirror for readable text inside mirrored context? No, just draw simple)
+      // Actually, we are continuously in mirrored context (scale -1, 1). 
+      // To draw text that reads correctly, we need to flip the context back temporarily or draw it mirrored-reversed relative to the mirror?
+      // Easiest is to save/restore or just scale negative on width.
+      
       ctx.save()
-      ctx.scale(-1, 1)
+      ctx.translate(x + labelWidth/2, y - labelHeight/2) // center of label
+      ctx.scale(-1, 1) // flip back
       ctx.fillStyle = '#ffffff'
-      ctx.font = 'bold 16px sans-serif'
-
-      ctx.fillText(`ID:${track.id} ${track.state}`, -(x + labelWidth - 8), y - 18)
-      ctx.font = '14px sans-serif'
-      ctx.fillText(`Score: ${(track.score * 100).toFixed(1)}%`, -(x + labelWidth - 8), y - 3)
-      ctx.restore()
-
-      // Keypoints
-      if (track.keypoints) {
-        track.keypoints.forEach(([kx, ky, conf]: number[]) => {
-          if (conf > 0.5) {
-            const skx = kx * scaleX
-            const sky = ky * scaleY
-            ctx.beginPath()
-            ctx.arc(skx, sky, 4, 0, 2 * Math.PI)
-            ctx.fillStyle = '#3b82f6'
-            ctx.fill()
-          }
-        })
-        // Simple skeleton TODO: Add connections loop if needed, but bbox+state is enough for now
+      if (color === 'rgb(0, 255, 0)' || color === '#22c55e') {
+          ctx.fillStyle = '#000000' // Black text on green
       }
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(labelText, 0, 0)
+      ctx.restore()
     })
 
     ctx.restore()
