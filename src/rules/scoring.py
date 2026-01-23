@@ -46,16 +46,16 @@ class FallScorer:
         self.config = config or get_config()
         self.params: FallScoreConfig = self.config.fall_score
         
-        # ==== LOWERED THRESHOLDS FOR RECALL ====
-        self.FAST_DROP_THRESHOLD = 0.04       # Lowered from 0.05
-        self.MEDIUM_DROP_THRESHOLD = 0.020    # Lowered from 0.025
-        self.SLOW_DROP_THRESHOLD = 0.012      # Lowered from 0.015
+        # ==== BALANCED THRESHOLDS FOR PRECISION ~85% ====
+        self.FAST_DROP_THRESHOLD = 0.045      # Keep
+        self.MEDIUM_DROP_THRESHOLD = 0.025    # Keep
+        self.SLOW_DROP_THRESHOLD = 0.015      # Keep
         
-        self.HIGH_IMPACT_THRESHOLD = 2.2      # Lowered from 2.5
-        self.MEDIUM_IMPACT_THRESHOLD = 1.8    # Lowered from 2.0
+        self.HIGH_IMPACT_THRESHOLD = 2.5      # Keep
+        self.MEDIUM_IMPACT_THRESHOLD = 2.0    # Keep
         
-        self.LYING_ORIENTATION = 55           # Lowered from 60
-        self.PRONE_ASPECT_RATIO = 0.85        # Increased from 0.8
+        self.LYING_ORIENTATION = 60           # Increased from 58
+        self.PRONE_ASPECT_RATIO = 0.80        # Decreased from 0.82
         
         logger.warning("⚠️ RECALL MODE: Using relaxed thresholds")
         

@@ -128,7 +128,7 @@ class FallStateMachine:
         # ==== RELAXED THRESHOLDS FOR HIGH RECALL ====
         
         # Time windows (in frames)
-        self.transition_window = int(2.0 * self.fps)  # Extended to 2 seconds
+        self.transition_window = int(1.7 * self.fps)  # Reduced to 1.5s (was 2.0s)
         self.t_hold_min = int(0.4 * self.fps)         # Reduced to 0.4s (was 0.8s)
         self.t_hold_fast = int(0.2 * self.fps)        # Very fast: 0.2s (was 0.5s)
         self.cooldown_frames = int(self.params.alert_cooldown_sec * self.fps)
@@ -140,13 +140,13 @@ class FallStateMachine:
         self.min_lying_for_alert = int(0.3 * self.fps)   # Reduced to 0.3s
         self.getting_up_timeout = int(5.0 * self.fps)
         
-        # ==== CRITICAL: VERY LOW THRESHOLDS FOR RECALL ====
-        self.FALL_ALERT_THRESHOLD = 0.45      # Reduced from 0.65
-        self.FALL_ALERT_STRICT = 0.60         # Reduced from 0.75
-        self.FALLING_ENTRY_THRESHOLD = 0.35   # Reduced from 0.50
-        self.PRONE_THRESHOLD = 0.45           # Reduced from 0.60
-        self.PRONE_STRONG_THRESHOLD = 0.55    # Reduced from 0.70
-        self.HYSTERESIS_EXIT = 0.25           # Reduced from 0.35
+        # ==== BALANCED THRESHOLDS FOR PRECISION ~85% ====
+        self.FALL_ALERT_THRESHOLD = 0.6      # Increased from 0.55
+        self.FALL_ALERT_STRICT = 0.75         # Increased from 0.70
+        self.FALLING_ENTRY_THRESHOLD = 0.40   # Keep
+        self.PRONE_THRESHOLD = 0.55           # Increased from 0.50
+        self.PRONE_STRONG_THRESHOLD = 0.7    # Increased from 0.65
+        self.HYSTERESIS_EXIT = 0.30           # Keep
         
         logger.warning("⚠️ RECALL-OPTIMIZED MODE: Low thresholds for maximum sensitivity")
         
