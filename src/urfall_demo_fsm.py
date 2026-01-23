@@ -17,6 +17,36 @@ KP_R_SHOULDER = 6
 KP_L_HIP = 11
 KP_R_HIP = 12
 
+# COCO-17 skeleton pairs (YOLOv8-Pose)
+SKELETON = [
+    (5, 6),   # shoulders
+    (5, 7), (7, 9),    # left arm
+    (6, 8), (8, 10),   # right arm
+    (5, 11), (6, 12),  # torso to hips
+    (11, 12),          # hips
+    (11, 13), (13, 15),# left leg
+    (12, 14), (14, 16) # right leg
+]
+
+HEAD = [
+    (0, 1), (0, 2), (1, 3), (2, 4),  # nose-eyes-ears
+    (0, 5), (0, 6)                   # nose to shoulders (nhìn "YOLO" hơn)
+]
+
+def draw_skeleton(frame: np.ndarray, kp: np.ndarray, color=(0, 255, 0), conf=0.4):
+    # vẽ điểm
+    for i in range(kp.shape[0]):
+        x, y, c = kp[i]
+        if c >= conf:
+            cv2.circle(frame, (int(x), int(y)), 3, color, -1)
+
+    # vẽ xương
+    for a, b in (SKELETON + HEAD):
+        xa, ya, ca = kp[a]
+        xb, yb, cb = kp[b]
+        if ca >= conf and cb >= conf:
+            cv2.line(frame, (int(xa), int(ya)), (int(xb), int(yb)), color, 2)
+
 
 def _pt(kp: np.ndarray, idx: int) -> Tuple[float, float, float]:
     """Return (x, y, conf) for a given keypoint index."""
@@ -360,6 +390,9 @@ def main():
                 # Vẽ bbox
                 x1, y1, x2, y2 = map(int, bbox)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
+
+                # Vẽ khung xương kiểu YOLO
+                draw_skeleton(frame, kp_np, color=color, conf=th.kp_conf)
 
                 # Vẽ label + track_id
                 label_text = f"ID:{track_id} {label}"
