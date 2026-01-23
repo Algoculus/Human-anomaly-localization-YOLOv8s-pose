@@ -149,9 +149,9 @@ def process_sequence(seq_info, detector, config, save_video=True):
             cam_name = "cam1"
         
         if gt_label == 0:
-            output_dir = output_base / "ADL" / cam_name
+            output_dir = output_base / "videos" / "ADL" / cam_name
         else:
-            output_dir = output_base / "FALL" / cam_name
+            output_dir = output_base / "videos" / "FALL" / cam_name
         
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / f"{seq_name}_overlay.mp4"
@@ -178,15 +178,12 @@ def eval_all(root_dir, index_path, config_path, no_videos=False):
     
     # Clean old items
     print("Cleaning old outputs...")
-    adl_dir = output_dir / "ADL"
-    fall_dir = output_dir / "FALL"
+    videos_dir = output_dir / "videos"
     plots_dir = output_dir / "plots"
     
     old_videos = []
-    if adl_dir.exists():
-        old_videos.extend(list(adl_dir.glob("**/*_overlay.mp4")))
-    if fall_dir.exists():
-        old_videos.extend(list(fall_dir.glob("**/*_overlay.mp4")))
+    if videos_dir.exists():
+        old_videos.extend(list(videos_dir.glob("**/*_overlay.mp4")))
     for video in old_videos:
         video.unlink()
         
