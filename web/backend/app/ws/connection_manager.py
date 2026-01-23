@@ -165,27 +165,29 @@ class ConnectionManager:
                 "type": "telemetry",
                 "roomId": room_id,
                 "frameId": frame_id,
-                "state": result["state"],
-                "score": result["score"],
-                "isCandidate": result["isCandidate"],
-                "isLying": result["isLying"],
-                "bbox": result["bbox"],
-                "keypoints": result.get("keypoints"),
+                "tracks": result["tracks"],
+                "alarm": result["alarm"],
                 "latency": latency_ms
             }
             
-            print(f"[TELEMETRY] Sending telemetry: frameId={frame_id}, state={result['state']}, score={result['score']:.2f}, bbox={result['bbox']}, keypoints_count={len(result.get('keypoints', [])) if result.get('keypoints') else 0}")
+            print(f"[TELEMETRY] Sending telemetry: frameId={frame_id}, tracks_count={len(result['tracks'])}, alarm={result['alarm']}")
             
             await websocket.send_json(telemetry_data)
             
             # If alarm, broadcast to receivers
             if result["alarm"]:
+                # Broadcast alarm using the highest score track for the summary
+                priority_track = result["tracks"][0] if result["tracks"] else {"state": "NORMAL", "score": 0.0}
+                if result["tracks"]:
+                    priority_track = max(result["tracks"], key=lambda t: t["score"])
+
                 await self.broadcast_alarm(
                     room_id=room_id,
+                    device_id=device_id,
                     frame_id=frame_id,
                     timestamp=timestamp,
-                    state=result["state"],
-                    score=result["score"],
+                    state=priority_track["state"],
+                    score=priority_track["score"],
                     snapshot_frame=result["snapshotFrame"]
                 )
         
@@ -202,6 +204,7 @@ class ConnectionManager:
     async def broadcast_alarm(
         self,
         room_id: str,
+        device_id: str,
         frame_id: int,
         timestamp: float,
         state: str,
@@ -223,11 +226,12 @@ class ConnectionManager:
         alarm_msg = {
             "type": "alarm",
             "roomId": room_id,
+            "deviceId": device_id,
             "ts": timestamp,
             "frameId": frame_id,
             "severity": "high",
             "message": "Fall detected!",
-            "snapshotJpegBase64": snapshot_b64,
+            "snapshot": snapshot_b64,
             "state": state,
             "score": score,
             "detectedAt": datetime.utcnow().isoformat()

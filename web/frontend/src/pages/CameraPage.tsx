@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Video, Play, Pause, AlertCircle, Activity, Wifi } from 'lucide-react'
+import { ArrowLeft, Video, Play, Pause, Activity, Wifi } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -8,13 +8,19 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/components/ui/use-toast'
 
-interface Telemetry {
-  frameId: number
+interface TrackData {
+  id: number
   state: string
   score: number
   bbox: number[] | null
   keypoints: number[][] | null
-  latency: number
+}
+
+interface Telemetry {
+  frameId: number
+  tracks: TrackData[]
+  alarm: boolean
+  latency?: number
 }
 
 const FIXED_ROOM_ID = 'fall-detection-room'
@@ -25,8 +31,8 @@ export default function CameraPage() {
   const [isStreaming, setIsStreaming] = useState(false)
   const [deviceId] = useState(`camera-${Date.now()}`)
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null)
-  const fps = 15 // Fixed FPS for consistent performance
-  
+  const fps = 15 // Fixed FPS by default
+
   const wsRef = useRef<WebSocket | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -45,7 +51,7 @@ export default function CameraPage() {
     }
   }, [])
 
-  // Continuous overlay rendering loop
+  // Loop for continuous overlay rendering
   useEffect(() => {
     if (!isStreaming) return
 
@@ -66,26 +72,26 @@ export default function CameraPage() {
   const startStreaming = async () => {
     try {
       // Get webcam stream
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { width: 640, height: 480 } 
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 640, height: 480 }
       })
-      
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         await videoRef.current.play()
       }
 
       // Connect WebSocket
-      const ws = new WebSocket(`ws://localhost:9000/ws`)
-      
+      const ws = new WebSocket(`ws://localhost:4611/ws`)
+
       ws.onopen = () => {
         console.log('WebSocket connected')
-        
+
         toast({
-          title: '✅ Connected',
+          title: 'Connected',
           description: 'WebSocket connected successfully',
         })
-        
+
         // Register as camera
         ws.send(JSON.stringify({
           type: 'register',
@@ -95,7 +101,7 @@ export default function CameraPage() {
         }))
 
         setIsStreaming(true)
-        
+
         // Start sending frames
         streamIntervalRef.current = window.setInterval(() => {
           sendFrame(ws)
@@ -104,21 +110,21 @@ export default function CameraPage() {
 
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data)
-        console.log('📥 Received WebSocket message:', data)
-        
+        // console.log('Received:', data)
+
         if (data.type === 'telemetry') {
-          console.log('📊 Telemetry data:', {
-            frameId: data.frameId,
-            state: data.state,
-            score: data.score,
-            bbox: data.bbox,
-            keypoints: data.keypoints ? `${data.keypoints.length} points` : 'none',
-            latency: data.latency
-          })
           latestTelemetryRef.current = data
           setTelemetry(data)
+
+          if (data.alarm) {
+            toast({
+              title: 'FALL DETECTED!',
+              description: 'Alarm triggered.',
+              variant: 'destructive'
+            })
+          }
         } else if (data.type === 'error') {
-          console.error('❌ WebSocket error:', data.message)
+          console.error('WebSocket error:', data.message)
           toast({
             title: 'Error',
             description: data.message,
@@ -154,19 +160,16 @@ export default function CameraPage() {
   }
 
   const stopStreaming = () => {
-    // Stop WebSocket
     if (wsRef.current) {
       wsRef.current.close()
       wsRef.current = null
     }
 
-    // Stop frame sending
     if (streamIntervalRef.current) {
       clearInterval(streamIntervalRef.current)
       streamIntervalRef.current = null
     }
 
-    // Stop video stream
     if (videoRef.current && videoRef.current.srcObject) {
       const stream = videoRef.current.srcObject as MediaStream
       stream.getTracks().forEach(track => track.stop())
@@ -183,24 +186,22 @@ export default function CameraPage() {
     const video = videoRef.current
     const canvas = captureCanvasRef.current
     const ctx = canvas.getContext('2d')
-    
+
     if (!ctx) return
 
     // Draw video frame to capture canvas (NO MIRROR - backend needs original)
     canvas.width = video.videoWidth
     canvas.height = video.videoHeight
-    
-    // Draw original frame (not mirrored) for YOLO processing
+
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
 
-    // Convert to base64
     canvas.toBlob((blob) => {
       if (!blob) return
-      
+
       const reader = new FileReader()
       reader.onloadend = () => {
         const base64 = (reader.result as string).split(',')[1]
-        
+
         const frameMsg = {
           type: 'frame',
           roomId: FIXED_ROOM_ID,
@@ -208,8 +209,8 @@ export default function CameraPage() {
           ts: Date.now(),
           data: base64
         }
-        
-        console.log(`📤 Sending frame ${frameCountRef.current} (${base64.length} bytes)`)
+
+        // console.log(`Sending frame ${frameCountRef.current}`)
         ws.send(JSON.stringify(frameMsg))
         frameCountRef.current++
       }
@@ -217,162 +218,170 @@ export default function CameraPage() {
     }, 'image/jpeg', 0.8)
   }
 
+  // COCO pose skeleton connections
+  const SKELETON = [
+    [16, 14], [14, 12], [17, 15], [15, 13], [12, 13],
+    [6, 12], [7, 13], [6, 7], [6, 8], [7, 9],
+    [8, 10], [9, 11], [2, 3], [1, 2], [1, 3],
+    [2, 4], [3, 5], [4, 6], [5, 7]
+  ]
+
   const drawOverlay = () => {
     if (!canvasRef.current || !videoRef.current) return
 
     const data = latestTelemetryRef.current
-    if (!data) return
+    if (!data || !data.tracks) return
 
     const canvas = canvasRef.current
     const video = videoRef.current
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    // Match canvas size to video display size
+    // Match display size
     if (canvas.width !== video.clientWidth || canvas.height !== video.clientHeight) {
       canvas.width = video.clientWidth
       canvas.height = video.clientHeight
     }
 
-    // Clear previous overlay
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-    // Calculate scale factors
     const scaleX = canvas.width / video.videoWidth
     const scaleY = canvas.height / video.videoHeight
 
-    // Save context and flip horizontally (mirror entire canvas to match video)
+    // Mirror for display
     ctx.save()
     ctx.scale(-1, 1)
     ctx.translate(-canvas.width, 0)
 
-    // Draw bounding box (using original coordinates, canvas is already mirrored)
-    if (data.bbox) {
-      const [x1, y1, x2, y2] = data.bbox
+    // Draw all tracks
+    data.tracks.forEach(track => {
+      // Color based on state matches backend (overlay.py)
+      let color = 'rgb(0, 255, 0)' // NORMAL - Green
+      if (track.state === 'FALL' || track.state === 'FALL_CONFIRMED') {
+        color = 'rgb(0, 0, 255)' // FALL - Red (BGR in python is (0,0,255) -> usually rendered as Red in easy tools, but let's stick to standard web Red)
+        // Wait, backend overlay.py says: COLOR_FALL = (0, 0, 255). OpenCV uses BGR. So (0,0,255) is RED in BGR.
+        // In web (RGB), Red is (255, 0, 0).
+        color = 'rgb(255, 0, 0)'
+      } else if (track.state === 'CANDIDATE') {
+        // Backend: COLOR_CANDIDATE = (0, 165, 255) -> Orange/Gold in BGR?
+        // Let's use a nice Orange for web
+        color = 'rgb(255, 165, 0)'
+      }
+
+      // Draw Keypoints and Skeleton
+      if (track.keypoints) {
+         // Draw skeleton connections
+         ctx.lineWidth = 2
+         ctx.strokeStyle = color
+         
+         SKELETON.forEach(([idx1, idx2]) => {
+            // indices are 1-based in COCO definition array above, convert to 0-based
+            const i1 = idx1 - 1
+            const i2 = idx2 - 1
+            
+            if (track.keypoints && track.keypoints[i1] && track.keypoints[i2]) {
+              const kp1 = track.keypoints[i1]
+              const kp2 = track.keypoints[i2]
+              
+              // kp format: [x, y, conf]
+              if (kp1[2] > 0.5 && kp2[2] > 0.5) {
+                 ctx.beginPath()
+                 ctx.moveTo(kp1[0] * scaleX, kp1[1] * scaleY)
+                 ctx.lineTo(kp2[0] * scaleX, kp2[1] * scaleY)
+                 ctx.stroke()
+              }
+            }
+         })
+
+         // Draw keypoint dots
+        track.keypoints.forEach(([kx, ky, conf]: number[]) => {
+          if (conf > 0.5) {
+            const skx = kx * scaleX
+            const sky = ky * scaleY
+            ctx.beginPath()
+            ctx.arc(skx, sky, 3, 0, 2 * Math.PI)
+            ctx.fillStyle = color
+            ctx.fill()
+          }
+        })
+      }
+
+      if (!track.bbox) return
+
+      const [x1, y1, x2, y2] = track.bbox
       const x = x1 * scaleX
       const y = y1 * scaleY
       const w = (x2 - x1) * scaleX
       const h = (y2 - y1) * scaleY
-      
-      // Determine color based on state
-      let color = '#22c55e' // Default green for NORMAL/STANDING
-      if (data.state === 'FALL' || data.state === 'FALL_CONFIRMED') {
-        color = '#ef4444' // Red for FALL
-      } else if (data.state === 'CANDIDATE' || data.state === 'FALL_CANDIDATE') {
-        color = '#eab308' // Yellow for CANDIDATE
-      }
-      
-      // Draw bounding box with glow effect
-      ctx.shadowBlur = 10
-      ctx.shadowColor = color
-      ctx.strokeStyle = color
-      ctx.lineWidth = 3
-      ctx.strokeRect(x, y, w, h)
+
+      // Bbox
       ctx.shadowBlur = 0
-
-      // Draw label background with rounded corners
-      const labelHeight = 35
-      const labelWidth = 160
-      ctx.fillStyle = color
-      ctx.beginPath()
-      
-      // Manual rounded rect (for browser compatibility)
-      const radius = 5
-      ctx.moveTo(x + radius, y - labelHeight - 5)
-      ctx.lineTo(x + labelWidth - radius, y - labelHeight - 5)
-      ctx.quadraticCurveTo(x + labelWidth, y - labelHeight - 5, x + labelWidth, y - labelHeight - 5 + radius)
-      ctx.lineTo(x + labelWidth, y - 5 - radius)
-      ctx.quadraticCurveTo(x + labelWidth, y - 5, x + labelWidth - radius, y - 5)
-      ctx.lineTo(x + radius, y - 5)
-      ctx.quadraticCurveTo(x, y - 5, x, y - 5 - radius)
-      ctx.lineTo(x, y - labelHeight - 5 + radius)
-      ctx.quadraticCurveTo(x, y - labelHeight - 5, x + radius, y - labelHeight - 5)
-      ctx.closePath()
-      ctx.fill()
-      
-      // Draw label text (unmirror text so it reads correctly)
-      ctx.save()
-      ctx.scale(-1, 1) // Unmirror text
-      ctx.fillStyle = '#ffffff'
-      ctx.font = 'bold 16px sans-serif'
-      ctx.fillText(`${data.state}`, -(x + labelWidth - 8), y - 18)
-      ctx.font = '14px sans-serif'
-      ctx.fillText(`Score: ${(data.score * 100).toFixed(1)}%`, -(x + labelWidth - 8), y - 3)
-      ctx.restore()
-    }
-
-    // Draw keypoints (using original coordinates, canvas is already mirrored)
-    if (data.keypoints) {
-      data.keypoints.forEach(([x, y, conf]: number[]) => {
-        if (conf > 0.5) {
-          const scaledX = x * scaleX
-          const scaledY = y * scaleY
-          
-          // Draw keypoint with glow
-          ctx.shadowBlur = 5
-          ctx.shadowColor = '#3b82f6'
-          ctx.beginPath()
-          ctx.arc(scaledX, scaledY, 4, 0, 2 * Math.PI)
-          ctx.fillStyle = '#3b82f6'
-          ctx.fill()
-          
-          // Draw keypoint border
-          ctx.strokeStyle = '#ffffff'
-          ctx.lineWidth = 2
-          ctx.stroke()
-          ctx.shadowBlur = 0
-        }
-      })
-      
-      // Draw skeleton connections (if available)
-      const connections = [
-        [0, 1], [0, 2], [1, 3], [2, 4], // Head
-        [5, 6], [5, 7], [7, 9], [6, 8], [8, 10], // Arms
-        [5, 11], [6, 12], [11, 12], // Torso
-        [11, 13], [13, 15], [12, 14], [14, 16] // Legs
-      ]
-      
-      ctx.strokeStyle = '#60a5fa'
+      ctx.strokeStyle = color
       ctx.lineWidth = 2
-      connections.forEach(([idx1, idx2]) => {
-        if (data.keypoints && data.keypoints[idx1] && data.keypoints[idx2]) {
-          const [x1, y1, conf1] = data.keypoints[idx1]
-          const [x2, y2, conf2] = data.keypoints[idx2]
-          if (conf1 > 0.5 && conf2 > 0.5) {
-            const scaledX1 = x1 * scaleX
-            const scaledY1 = y1 * scaleY
-            const scaledX2 = x2 * scaleX
-            const scaledY2 = y2 * scaleY
-            ctx.beginPath()
-            ctx.moveTo(scaledX1, scaledY1)
-            ctx.lineTo(scaledX2, scaledY2)
-            ctx.stroke()
-          }
-        }
-      })
-    }
+      ctx.strokeRect(x, y, w, h)
 
-    // Restore context (undo mirror)
+      // Label
+      const labelHeight = 22
+      const labelText = `ID:${track.id} ${track.state} ${(track.score).toFixed(2)}`
+      
+      ctx.font = 'bold 14px sans-serif'
+      const textMetrics = ctx.measureText(labelText)
+      const labelWidth = textMetrics.width + 10
+
+      ctx.fillStyle = color
+      ctx.fillRect(x, y - labelHeight, labelWidth, labelHeight)
+
+      // Text (Unmirror for readable text inside mirrored context? No, just draw simple)
+      // Actually, we are continuously in mirrored context (scale -1, 1). 
+      // To draw text that reads correctly, we need to flip the context back temporarily or draw it mirrored-reversed relative to the mirror?
+      // Easiest is to save/restore or just scale negative on width.
+      
+      ctx.save()
+      ctx.translate(x + labelWidth/2, y - labelHeight/2) // center of label
+      ctx.scale(-1, 1) // flip back
+      ctx.fillStyle = '#ffffff'
+      if (color === 'rgb(0, 255, 0)' || color === '#22c55e') {
+          ctx.fillStyle = '#000000' // Black text on green
+      }
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(labelText, 0, 0)
+      ctx.restore()
+    })
+
     ctx.restore()
   }
 
   const getStateColor = (state: string) => {
     switch (state) {
       case 'FALL':
-      case 'FALL_CONFIRMED': return 'destructive' // Red
+      case 'FALL_CONFIRMED': return 'destructive'
       case 'CANDIDATE':
-      case 'FALL_CANDIDATE': return 'warning' // Yellow
+      case 'FALL_CANDIDATE': return 'warning'
       case 'NORMAL':
-      case 'STANDING': return 'success' // Green
-      case 'LYING': return 'secondary'
+      case 'STANDING': return 'success'
       default: return 'default'
     }
   }
 
+  // Get highest priority track for side panel
+  const getPriorityTrack = () => {
+    if (!telemetry || !telemetry.tracks || telemetry.tracks.length === 0) return null
+    // Priority: FALL > CANDIDATE > NORMAL, then score
+    return telemetry.tracks.reduce((prev, current) => {
+      if (current.state === 'FALL_CONFIRMED') return current
+      if (prev.state === 'FALL_CONFIRMED') return prev
+      if (current.state === 'CANDIDATE' && prev.state !== 'FALL_CONFIRMED') return current
+      if (current.score > prev.score) return current
+      return prev
+    })
+  }
+
+  const priorityTrack = getPriorityTrack()
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-gray-800 p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 md:mb-8 gap-4">
           <div className="flex items-center gap-3 md:gap-4">
             <Button variant="ghost" size="icon" onClick={() => navigate('/')} className="hover:bg-gray-700 text-gray-300 hover:text-white">
@@ -385,10 +394,10 @@ export default function CameraPage() {
               <p className="text-sm text-gray-400">Stream frames for real-time fall detection</p>
             </div>
           </div>
-          
+
           {isStreaming ? (
-            <Button 
-              variant="destructive" 
+            <Button
+              variant="destructive"
               onClick={stopStreaming}
               className="w-full md:w-auto shadow-lg hover:shadow-xl transition-all duration-300"
             >
@@ -396,7 +405,7 @@ export default function CameraPage() {
               Stop Streaming
             </Button>
           ) : (
-            <Button 
+            <Button
               onClick={startStreaming}
               className="w-full md:w-auto bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all duration-300"
             >
@@ -407,9 +416,8 @@ export default function CameraPage() {
         </div>
 
         <div className="grid lg:grid-cols-3 gap-4 md:gap-6">
-          {/* Video Feed */}
           <div className="lg:col-span-2">
-            <Card className="overflow-hidden shadow-2xl border-2 border-gray-700 bg-gray-800/90 backdrop-blur-sm hover:shadow-2xl transition-shadow duration-300">
+            <Card className="overflow-hidden shadow-2xl border-2 border-gray-700 bg-gray-800/90 backdrop-blur-sm">
               <CardHeader className="bg-gradient-to-r from-gray-800 to-slate-800 border-b border-gray-700">
                 <CardTitle className="flex items-center gap-2 text-gray-200">
                   <Video className="w-5 h-5 text-blue-400" />
@@ -427,131 +435,65 @@ export default function CameraPage() {
                   <video
                     ref={videoRef}
                     className="w-full h-full object-cover"
-                    style={{ transform: 'scaleX(-1)' }}
+                    style={{ transform: 'scaleX(-1)' }} // Mirror video
                     muted
                   />
                   <canvas
                     ref={canvasRef}
                     className="absolute top-0 left-0 w-full h-full"
                   />
-                  
-                  {!isStreaming && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-gray-900/90 to-gray-800/90 backdrop-blur-sm">
-                      <Play className="w-16 h-16 text-white mb-4 opacity-50" />
-                      <p className="text-white text-lg font-medium">Click "Start Streaming" to begin</p>
-                      <p className="text-gray-400 text-sm mt-2">Your camera will be accessed for fall detection</p>
-                    </div>
-                  )}
-                  
-                  {/* Frame Counter Overlay */}
-                  {isStreaming && telemetry && (
-                    <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-3 py-2 rounded-lg border border-white/20">
-                      <div className="flex items-center gap-2 text-white text-sm">
-                        <Activity className="w-4 h-4" />
-                        <span>Frame #{telemetry.frameId}</span>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </CardContent>
             </Card>
           </div>
 
-          {/* Telemetry Panel */}
           <div className="space-y-4 md:space-y-6">
-            {/* Configuration */}
             {!isStreaming && (
-              <Card className="shadow-2xl border-2 border-gray-700 bg-gray-800/90 backdrop-blur-sm animate-in slide-in-from-right duration-500">
-                <CardHeader className="bg-gradient-to-r from-gray-800 to-slate-800 border-b border-gray-700">
+              <Card className="shadow-2xl border-2 border-gray-700 bg-gray-800/90 backdrop-blur-sm">
+                <CardHeader>
                   <CardTitle className="text-lg text-gray-200">Configuration</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4 pt-6">
                   <div className="p-4 bg-blue-950/30 rounded-lg border border-blue-800">
-                    <Label className="text-sm font-medium text-blue-300">Room ID (Fixed)</Label>
+                    <Label className="text-sm font-medium text-blue-300">Room ID</Label>
                     <p className="text-sm text-blue-400 mt-1 font-mono">{FIXED_ROOM_ID}</p>
-                    <p className="text-xs text-blue-500 mt-2">All devices use the same room</p>
                   </div>
                   <div>
                     <Label className="text-gray-300">Device ID</Label>
-                    <Input 
-                      value={deviceId} 
-                      disabled
-                      className="font-mono text-sm bg-gray-900/50 border-gray-700 text-gray-300"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-gray-300">Frame Rate</Label>
-                    <div className="p-3 bg-gray-900/50 rounded-lg border border-gray-700 mt-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-400">Fixed FPS</span>
-                        <Badge variant="outline" className="border-green-600 text-green-400 bg-green-950/30">{fps} fps</Badge>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-2">Optimized for real-time detection</p>
-                    </div>
+                    <Input value={deviceId} disabled className="font-mono text-sm bg-gray-900/50 border-gray-700 text-gray-300" />
                   </div>
                 </CardContent>
               </Card>
             )}
 
-            {/* Live Telemetry */}
-            {isStreaming && telemetry && (
+            {isStreaming && priorityTrack && (
               <Card className="shadow-2xl border-2 border-gray-700 bg-gray-800/90 backdrop-blur-sm animate-in slide-in-from-right duration-500">
                 <CardHeader className="bg-gradient-to-r from-gray-800 to-slate-800 border-b border-gray-700">
                   <CardTitle className="text-lg flex items-center gap-2 text-gray-200">
                     <Activity className="w-5 h-5 text-blue-400" />
-                    Live Telemetry
+                    Live Telemetry (Highest Priority)
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4 pt-6">
                   <div>
-                    <Label className="text-sm text-gray-400">Detection State</Label>
-                    <div className="mt-2">
-                      <Badge 
-                        variant={getStateColor(telemetry.state)}
-                        className="text-base px-4 py-2 animate-in fade-in duration-300 shadow-lg"
-                      >
-                        {telemetry.state}
-                      </Badge>
-                    </div>
-                  </div>
-
-                  <div className="p-4 bg-gradient-to-r from-blue-950/30 to-purple-950/30 rounded-lg border border-blue-800">
-                    <Label className="text-sm text-gray-400">Confidence Score</Label>
+                    <Label className="text-sm text-gray-400">Status (ID: {priorityTrack.id})</Label>
                     <div className="mt-2 text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                      {(telemetry.score * 100).toFixed(1)}%
+                      {(priorityTrack.score * 100).toFixed(1)}%
                     </div>
-                    <div className="mt-2 w-full bg-gray-900 rounded-full h-2 overflow-hidden">
-                      <div 
-                        className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-300 shadow-lg shadow-blue-500/50"
-                        style={{ width: `${telemetry.score * 100}%` }}
-                      />
-                    </div>
+                    <Badge
+                      variant={getStateColor(priorityTrack.state)}
+                      className="mt-2 text-base px-4 py-2"
+                    >
+                      {priorityTrack.state}
+                    </Badge>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div className="p-3 bg-gray-900/50 rounded-lg border border-gray-700">
-                      <Label className="text-xs text-gray-400">Frame ID</Label>
-                      <p className="text-lg font-semibold mt-1 text-gray-200">{telemetry.frameId}</p>
-                    </div>
-                    <div className="p-3 bg-gray-900/50 rounded-lg border border-gray-700">
-                      <Label className="text-xs text-gray-400">Latency</Label>
-                      <p className="text-lg font-semibold mt-1 text-gray-200">{telemetry.latency}ms</p>
+                      <Label className="text-xs text-gray-400">Active Tracks</Label>
+                      <p className="text-lg font-semibold mt-1 text-gray-200">{telemetry?.tracks.length || 0}</p>
                     </div>
                   </div>
-
-                  {(telemetry.state === 'FALL' || telemetry.state === 'FALL_CONFIRMED') && (
-                    <div className="p-4 bg-gradient-to-r from-red-950/40 to-orange-950/40 rounded-lg border-2 border-red-700 animate-pulse shadow-2xl shadow-red-500/30">
-                      <div className="flex items-center gap-3">
-                        <AlertCircle className="w-6 h-6 text-red-400" />
-                        <div>
-                          <span className="font-bold text-red-300 text-lg">FALL DETECTED!</span>
-                          <p className="text-sm mt-1 text-red-400">
-                            Alarm broadcast to all receivers
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </CardContent>
               </Card>
             )}
