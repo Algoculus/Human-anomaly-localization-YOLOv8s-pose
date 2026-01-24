@@ -22,6 +22,7 @@ def find_frames_dir(seq_path):
     candidates = [
         seq_path / seq_name,
         seq_path,
+        seq_path / "cam0" / "rgb" / f"{seq_name}-cam0-rgb",
         seq_path / "cam0" / "rgb",
         seq_path / "cam0-rgb",
         seq_path / "rgb"
@@ -73,8 +74,17 @@ def prepare_urfd(root_dir, output_index):
         seq_folders.extend([d for d in fall_dir.iterdir() if d.is_dir() and 'cam0-rgb' in d.name])
         seq_folders.extend([d for d in adl_dir.iterdir() if d.is_dir() and 'cam0-rgb' in d.name])
     else:
-        print("Detected Layout 1: adl-XX and fall-XX folders directly in root")
-        seq_folders = [d for d in root_dir.iterdir() if d.is_dir() and (d.name.startswith('adl-') or d.name.startswith('fall-'))]
+        # Check for subdirectories named 'adl' and 'falls'
+        adl_subdir = root_dir / "adl"
+        falls_subdir = root_dir / "falls"
+        
+        if adl_subdir.exists() and falls_subdir.exists():
+            print("Detected Layout 3: adl/ and falls/ subdirectories")
+            seq_folders.extend([d for d in adl_subdir.iterdir() if d.is_dir() and d.name.startswith('adl-')])
+            seq_folders.extend([d for d in falls_subdir.iterdir() if d.is_dir() and d.name.startswith('fall-')])
+        else:
+            print("Detected Layout 1: adl-XX and fall-XX folders directly in root")
+            seq_folders = [d for d in root_dir.iterdir() if d.is_dir() and (d.name.startswith('adl-') or d.name.startswith('fall-'))]
     
     seq_folders = sorted(seq_folders)
     
