@@ -5,7 +5,6 @@ from pathlib import Path
 import pandas as pd
 import cv2
 
-# Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.urfd.dataset import load_sequence_frames
@@ -19,12 +18,22 @@ from src.urfd.utils import load_config, set_seed, validate_config
 from prepare_urfd import prepare_urfd
 
 def process_sequence(seq_info, detector, config, save_video=True):
-    # Process a single sequence and return prediction results.
+    """
+    Process a single sequence and return prediction results.
+    
+    Args:
+        seq_info: Dict with seq_name, frame_dir, gt_label
+        detector: YOLOPoseDetector instance
+        config: Configuration dict
+        save_video: Whether to save overlay video
+        
+    Returns:
+        result: Dict with seq_name, gt_label, pred_label, pred_score or None
+    """
     seq_name = seq_info["seq_name"]
     frame_dir = Path(seq_info["frame_dir"])
     gt_label = seq_info["gt_label"]
     
-    # Load frames
     frame_files = sorted(
         list(frame_dir.glob("*.png")) + list(frame_dir.glob("*.jpg")),
         key=lambda p: int(''.join(filter(str.isdigit, p.stem)) or 0)
@@ -44,62 +53,49 @@ def process_sequence(seq_info, detector, config, save_video=True):
         print(f"Warning: Failed to load frames for {seq_name}")
         return None
     
-    # Initialize tracker
     tracker = MultiPersonTracker(config)
-    
-    # State per track
-    state_machines = {} # tid -> FallStateMachine
-    histories = {}      # tid -> list of features
-    
-    # Results for visualization and scoring
-    all_tracks_data = [] # List of {tid: {bbox, state, score...}} per frame
-    sequence_max_scores = [] # Max score across all tracks per frame
+    state_machines = {}
+    histories = {}
+    all_tracks_data = []
+    sequence_max_scores = []
     
     for idx, frame in enumerate(frames):
-        # Run YOLO pose detection
         detections = detector.detect(frame)
-        
-        # Update tracker
         matches = tracker.update(detections, config["keypoint_conf_thres"], idx)
         
         frame_track_data = {}
         max_frame_score = 0.0
         
-        # Process all active tracks (matched and missing)
         active_tids = list(tracker.tracks.keys())
         
         for tid in active_tids:
-            # Get detection if matched
             det = None
             if tid in matches:
                 det = detections[matches[tid]]
             
-            # Initialize state machinery for new track
             if tid not in state_machines:
                 state_machines[tid] = FallStateMachine(config)
                 histories[tid] = []
             
-            # Compute features module internal tracker logic removed, so pass det directly
+            image_size = (frames[0].shape[1], frames[0].shape[0]) if len(frames) > 0 else None
             features = compute_frame_features(
                 det,
                 config["keypoint_conf_thres"],
                 config["dy_window"],
                 histories[tid],
                 track_id=tid,
-                frame_idx=idx
+                frame_idx=idx,
+                image_size=image_size
             )
             
             histories[tid].append(features)
-            
-            # Update state machine
             state, score = state_machines[tid].update(features)
             
             if score > max_frame_score:
                 max_frame_score = score
             
-            # Store data for this track
             frame_track_data[tid] = {
-                "bbox": features["bbox"], # May be None if missing
+                "bbox": features["bbox"],
                 "keypoints": det["keypoints"] if det else None,
                 "state": state,
                 "score": score
@@ -108,22 +104,16 @@ def process_sequence(seq_info, detector, config, save_video=True):
         all_tracks_data.append(frame_track_data)
         sequence_max_scores.append(max_frame_score)
     
-    # Determine sequence-level prediction
-    # Check if ANY track confirmed fall for sufficient duration
     fall_confirmed = False
     
-    # Analyze state history for each track
     for tid, sm in state_machines.items():
-        # Get history of states from result data
-        # (Alternatively could store in sm, but let's reconstruct from all_tracks_data)
         track_states = []
         for frame_data in all_tracks_data:
             if tid in frame_data:
                 track_states.append(frame_data[tid]["state"])
             else:
-                track_states.append("NONE") # Track didn't exist or was lost
+                track_states.append("NONE")
         
-        # Check for sustained FALL_CONFIRMED
         max_consecutive = 0
         current_consecutive = 0
         for s in track_states:
@@ -141,7 +131,6 @@ def process_sequence(seq_info, detector, config, save_video=True):
     pred_label = 1 if fall_confirmed else 0
     max_score = max(sequence_max_scores) if sequence_max_scores else 0.0
     
-    # Save video
     if save_video:
         output_base = Path(config["output_dir"])
         cam_name = "cam0"
@@ -166,17 +155,21 @@ def process_sequence(seq_info, detector, config, save_video=True):
     }
 
 def eval_all(root_dir, index_path, config_path, no_videos=False):
-    # Evaluate all URFD sequences.
+    """
+    Evaluate all URFD sequences.
     
-    # Load config
+    Args:
+        root_dir: Root directory of URFD dataset
+        index_path: Path to index CSV file
+        config_path: Path to config YAML file
+        no_videos: Skip video generation if True
+    """
     config = load_config(config_path)
     set_seed(config["seed"])
     
-    # Prepare output directory
     output_dir = Path(config["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Clean old items
     print("Cleaning old outputs...")
     videos_dir = output_dir / "videos"
     plots_dir = output_dir / "plots"
@@ -195,7 +188,6 @@ def eval_all(root_dir, index_path, config_path, no_videos=False):
         
     print(f"Deleted {len(old_videos)} old videos, {len(old_plots)} old plots")
     
-    # Prepare data index
     index_path = Path(index_path)
     if not index_path.exists():
         print(f"Index file {index_path} not found. Preparing dataset...")
@@ -204,7 +196,6 @@ def eval_all(root_dir, index_path, config_path, no_videos=False):
     df_index = pd.read_csv(index_path)
     print(f"Loaded {len(df_index)} sequences from index")
     
-    # Init detector
     print("Initializing YOLOv8s-pose detector...")
     detector = YOLOPoseDetector(
         model_path=config["yolo_model"],
@@ -225,7 +216,6 @@ def eval_all(root_dir, index_path, config_path, no_videos=False):
             results.append(res)
             print(f"  GT={res['gt_label']}, Pred={res['pred_label']}, Score={res['pred_score']:.3f}")
 
-    # Save predictions
     output_dir = Path(config["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
     
@@ -234,7 +224,6 @@ def eval_all(root_dir, index_path, config_path, no_videos=False):
     df_results.to_csv(pred_path, index=False)
     print(f"\nPredictions saved to {pred_path}")
     
-    # Metrics
     gt_labels = df_results["gt_label"].values
     pred_labels = df_results["pred_label"].values
     
@@ -243,12 +232,9 @@ def eval_all(root_dir, index_path, config_path, no_videos=False):
     save_metrics(metrics, metrics_path)
     print(f"Metrics saved to {metrics_path}")
     
-    # Plots
     print("\nCreating evaluation plots...")
     plot_paths = create_evaluation_plots(metrics, output_dir)
-    pass # Plots created
     
-    # Summary
     summary_path = output_dir / "eval_summary.json"
     save_evaluation_summary(metrics, config, plot_paths, summary_path)
     print(f"Summary saved to {summary_path}")

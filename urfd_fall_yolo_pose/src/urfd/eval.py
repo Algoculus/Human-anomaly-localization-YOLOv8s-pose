@@ -4,46 +4,44 @@ from pathlib import Path
 from datetime import datetime
 
 def compute_metrics(gt_labels, pred_labels):
-    """Compute evaluation metrics at sequence level.
+    """
+    Compute evaluation metrics at sequence level.
+    
+    Metrics computed:
+    - Confusion matrix (TP, TN, FP, FN)
+    - Accuracy: (TP + TN) / Total
+    - Precision: TP / (TP + FP)
+    - Recall: TP / (TP + FN)
+    - Specificity: TN / (TN + FP)
+    - F1-Score: 2 * Precision * Recall / (Precision + Recall)
     
     Args:
         gt_labels: Array of ground truth labels (0=ADL, 1=Fall)
         pred_labels: Array of predicted labels (0=ADL, 1=Fall)
     
     Returns:
-        metrics: Dict containing:
-            - confusion_matrix: TP, TN, FP, FN
-            - accuracy
-            - precision
-            - recall (sensitivity)
-            - specificity
-            - f1_score
+        metrics: Dict containing confusion_matrix, accuracy, precision, recall, specificity, f1_score
     """
     gt_labels = np.array(gt_labels)
     pred_labels = np.array(pred_labels)
     
-    # Compute confusion matrix
-    TP = np.sum((gt_labels == 1) & (pred_labels == 1))
-    TN = np.sum((gt_labels == 0) & (pred_labels == 0))
-    FP = np.sum((gt_labels == 0) & (pred_labels == 1))
-    FN = np.sum((gt_labels == 1) & (pred_labels == 0))
+    # Compute confusion matrix components using boolean indexing
+    TP = np.sum((gt_labels == 1) & (pred_labels == 1))  # True Positive
+    TN = np.sum((gt_labels == 0) & (pred_labels == 0))  # True Negative
+    FP = np.sum((gt_labels == 0) & (pred_labels == 1))  # False Positive
+    FN = np.sum((gt_labels == 1) & (pred_labels == 0))  # False Negative
     
-    # Compute metrics
     total = len(gt_labels)
-    accuracy = (TP + TN) / total if total > 0 else 0.0
     
+    # Compute metrics with division-by-zero protection
+    accuracy = (TP + TN) / total if total > 0 else 0.0
     precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
     recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
     specificity = TN / (TN + FP) if (TN + FP) > 0 else 0.0
     f1_score = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
     
     metrics = {
-        "confusion_matrix": {
-            "TP": int(TP),
-            "TN": int(TN),
-            "FP": int(FP),
-            "FN": int(FN)
-        },
+        "confusion_matrix": {"TP": int(TP), "TN": int(TN), "FP": int(FP), "FN": int(FN)},
         "accuracy": float(accuracy),
         "precision": float(precision),
         "recall": float(recall),
@@ -54,7 +52,8 @@ def compute_metrics(gt_labels, pred_labels):
     return metrics
 
 def save_metrics(metrics, output_path):
-    """Save metrics to JSON file.
+    """
+    Save metrics to JSON file.
     
     Args:
         metrics: Metrics dict
@@ -64,24 +63,24 @@ def save_metrics(metrics, output_path):
         json.dump(metrics, f, indent=2)
 
 def plot_confusion_matrix(metrics, output_path):
-    """Plot confusion matrix as heatmap.
+    """
+    Plot confusion matrix as heatmap.
+    
+    Layout:
+    [[TP, FN],   <- Actual Fall
+     [FP, TN]]   <- Actual ADL
     
     Args:
         metrics: Metrics dict containing confusion_matrix
         output_path: Path to save PNG file
     """
     import matplotlib
-    matplotlib.use('Agg')  # Use non-interactive backend
+    matplotlib.use('Agg')  # Non-interactive backend
     import matplotlib.pyplot as plt
     import seaborn as sns
     
     cm = metrics["confusion_matrix"]
-    # Correct matrix layout: [[TP, FN], [FP, TN]]
-    # Rows: Actual (Fall, ADL), Columns: Predicted (Fall, ADL)
-    matrix = np.array([
-        [cm["TP"], cm["FN"]],
-        [cm["FP"], cm["TN"]]
-    ])
+    matrix = np.array([[cm["TP"], cm["FN"]], [cm["FP"], cm["TN"]]])
     
     plt.figure(figsize=(8, 6))
     sns.heatmap(matrix, annot=True, fmt='d', cmap='Blues', 
@@ -96,23 +95,23 @@ def plot_confusion_matrix(metrics, output_path):
     plt.close()
 
 def plot_metrics_bars(metrics, output_path):
-    """Plot metrics as bar chart.
+    """
+    Plot metrics as bar chart.
+    
+    Shows: Accuracy, Precision, Recall, Specificity, F1-Score
     
     Args:
         metrics: Metrics dict
         output_path: Path to save PNG file
     """
     import matplotlib
-    matplotlib.use('Agg')  # Use non-interactive backend
+    matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     
     metric_names = ['Accuracy', 'Precision', 'Recall', 'Specificity', 'F1-Score']
     metric_values = [
-        metrics['accuracy'],
-        metrics['precision'],
-        metrics['recall'],
-        metrics['specificity'],
-        metrics['f1_score']
+        metrics['accuracy'], metrics['precision'], metrics['recall'],
+        metrics['specificity'], metrics['f1_score']
     ]
     
     colors = ['#3498db', '#2ecc71', '#e74c3c', '#f39c12', '#9b59b6']
@@ -135,7 +134,8 @@ def plot_metrics_bars(metrics, output_path):
     plt.close()
 
 def create_evaluation_plots(metrics, output_dir):
-    """Create all evaluation plots.
+    """
+    Create all evaluation plots.
     
     Args:
         metrics: Metrics dict
@@ -147,21 +147,19 @@ def create_evaluation_plots(metrics, output_dir):
     plots_dir = Path(output_dir) / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
     
-    # Plot confusion matrix
+    # Generate confusion matrix plot
     cm_path = plots_dir / "confusion_matrix.png"
     plot_confusion_matrix(metrics, cm_path)
     
-    # Plot metrics bars
+    # Generate metrics bar chart
     bars_path = plots_dir / "metrics_bars.png"
     plot_metrics_bars(metrics, bars_path)
     
-    return {
-        "confusion_matrix": str(cm_path),
-        "metrics_bars": str(bars_path)
-    }
+    return {"confusion_matrix": str(cm_path), "metrics_bars": str(bars_path)}
 
 def save_evaluation_summary(metrics, config, plot_paths, output_path):
-    """Save comprehensive evaluation summary.
+    """
+    Save comprehensive evaluation summary.
     
     Args:
         metrics: Metrics dict
@@ -178,4 +176,3 @@ def save_evaluation_summary(metrics, config, plot_paths, output_path):
     
     with open(output_path, 'w') as f:
         json.dump(summary, f, indent=2)
-

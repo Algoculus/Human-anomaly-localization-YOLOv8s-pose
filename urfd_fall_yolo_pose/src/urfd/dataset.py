@@ -2,14 +2,15 @@ import cv2
 from pathlib import Path
 
 def load_sequence_frames(seq_path):
-    """Load RGB frames from a URFD sequence folder.
+    """
+    Load RGB frames from a URFD sequence folder.
     
-    Searches for frames in:
-    1) seq_path/seq_name/ (nested folder with same name)
-    2) seq_path/ (directly in the folder)
-    3) seq_path/cam0/rgb/
-    4) seq_path/cam0-rgb/
-    5) seq_path/rgb/
+    Search order (first match wins):
+    1. seq_path/seq_name/
+    2. seq_path/
+    3. seq_path/cam0/rgb/
+    4. seq_path/cam0-rgb/
+    5. seq_path/rgb/
     
     Args:
         seq_path: Path to sequence folder
@@ -21,15 +22,16 @@ def load_sequence_frames(seq_path):
     seq_path = Path(seq_path)
     seq_name = seq_path.name
     
-    # Check candidate directories (including nested structure)
+    # Priority list of candidate directories
     candidates = [
-        seq_path / seq_name,  # Nested folder (URFD actual structure)
-        seq_path,              # Direct folder
-        seq_path / "cam0" / "rgb",
-        seq_path / "cam0-rgb",
-        seq_path / "rgb"
+        seq_path / seq_name,      # Nested folder with same name
+        seq_path,                  # Current folder
+        seq_path / "cam0" / "rgb", # Standard URFD structure
+        seq_path / "cam0-rgb",     # Alternative naming
+        seq_path / "rgb"           # Simple rgb folder
     ]
     
+    # Find first valid frame directory
     frame_dir = None
     for cand in candidates:
         if cand.exists() and cand.is_dir():
@@ -41,7 +43,8 @@ def load_sequence_frames(seq_path):
     if frame_dir is None:
         return [], []
     
-    # Get all frame files and sort by numeric order
+    # Sort frames numerically (not alphabetically)
+    # This ensures 1, 2, 10 instead of 1, 10, 2
     frame_files = sorted(
         list(frame_dir.glob("*.png")) + list(frame_dir.glob("*.jpg")),
         key=lambda p: int(''.join(filter(str.isdigit, p.stem)) or 0)
