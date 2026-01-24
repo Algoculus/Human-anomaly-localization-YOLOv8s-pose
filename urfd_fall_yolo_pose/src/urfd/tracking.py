@@ -2,21 +2,45 @@ import numpy as np
 from src.urfd.utils import compute_iou, compute_center_distance
 
 class MultiPersonTracker:
-    # Temporal tracking of multiple people
+    """
+    Multi-person tracker using greedy IoU-based assignment.
+    
+    Maintains track identities across frames using a combination of:
+    - IoU (Intersection over Union) for spatial overlap
+    - Center distance for motion prediction
+    """
     
     def __init__(self, config):
-        # Initialize tracker with config
+        """
+        Initialize tracker with config.
+        
+        Args:
+            config: Configuration dict with tracking parameters
+        """
         self.config = config
-        self.tracks = {}  # {track_id: track_data}
+        self.tracks = {}       # {track_id: track_data}
         self.next_track_id = 0
     
     def reset(self):
-        # Reset tracker state
+        """Reset tracker state."""
         self.tracks = {}
         self.next_track_id = 0
     
     def _compute_fall_likelihood_score(self, bbox, keypoints, keypoint_conf_thres):
-        # Compute a fall-likelihood proxy score for re-initialization
+        """
+        Compute a fall-likelihood proxy score for re-initialization.
+        
+        Higher score = more likely to be fallen person.
+        Used to prioritize tracking of potentially fallen individuals.
+        
+        Args:
+            bbox: Bounding box [x1, y1, x2, y2]
+            keypoints: Keypoints array (17, 3)
+            keypoint_conf_thres: Keypoint confidence threshold
+            
+        Returns:
+            score: Fall likelihood score in [0, 1]
+        """
         x1, y1, x2, y2 = bbox
         w = x2 - x1
         h = y2 - y1
@@ -27,20 +51,19 @@ class MultiPersonTracker:
         ar = w / h
         center_y = (y1 + y2) / 2
         
-        # Higher AR = more lying-like
+        # Higher AR = more lying-like (40% weight)
         ar_score = min(ar / 2.0, 1.0)
         
-        # Lower center (higher y) = likely on ground
-        # Normalize by assuming image height ~480-720
+        # Lower position (higher y) = likely on ground (30% weight)
         y_score = min(center_y / 500.0, 1.0)
         
-        # Check if keypoints suggest horizontal posture
+        # Check body angle from keypoints (30% weight)
         angle_score = 0.0
         if keypoints is not None:
-            ls = keypoints[5]
-            rs = keypoints[6]
-            lh = keypoints[11]
-            rh = keypoints[12]
+            ls = keypoints[5]   # Left shoulder
+            rs = keypoints[6]   # Right shoulder
+            lh = keypoints[11]  # Left hip
+            rh = keypoints[12]  # Right hip
             
             if ls[2] >= keypoint_conf_thres and rs[2] >= keypoint_conf_thres and \
                lh[2] >= keypoint_conf_thres and rh[2] >= keypoint_conf_thres:
@@ -58,18 +81,36 @@ class MultiPersonTracker:
         return 0.4 * ar_score + 0.3 * y_score + 0.3 * angle_score
     
     def update(self, detections, keypoint_conf_thres, frame_idx):
-        # Update tracker with new detections
-        # Returns: dict of {track_id: detection_index} mapping
+        """
+        Update tracker with new detections.
         
+        Algorithm:
+        1. If no detections: increment missing count for all tracks
+        2. If no tracks: create new tracks for all detections
+        3. Otherwise: compute cost matrix and perform greedy matching
+        
+        Args:
+            detections: List of detection dicts
+            keypoint_conf_thres: Keypoint confidence threshold
+            frame_idx: Current frame index
+            
+        Returns:
+            matches: Dict of {track_id: detection_index}
+        """
+        # =========================================================
+        # HANDLE NO DETECTIONS
+        # =========================================================
         if len(detections) == 0:
-            # Increment missing count for all tracks
             for tid in list(self.tracks.keys()):
                 self.tracks[tid]["missing_count"] += 1
+                # Remove stale tracks
                 if self.tracks[tid]["missing_count"] > self.config["track_max_missing"]:
                     del self.tracks[tid]
             return {}
         
-        # If no tracks exist, initialize all detections as new tracks
+        # =========================================================
+        # INITIALIZE TRACKS IF EMPTY
+        # =========================================================
         if len(self.tracks) == 0:
             assigned_matches = {}
             for i, det in enumerate(detections):
@@ -90,16 +131,18 @@ class MultiPersonTracker:
                 assigned_matches[tid] = i
             return assigned_matches
 
-        # Match detections to existing tracks
-        # Cost matrix: rows=tracks, cols=detections
+        # =========================================================
+        # COMPUTE COST MATRIX
+        # Cost = (1 - IoU) + normalized_center_distance
+        # =========================================================
         track_ids = list(self.tracks.keys())
         costs = np.zeros((len(track_ids), len(detections)))
         
         for r, tid in enumerate(track_ids):
             track = self.tracks[tid]
-            # Predict new position with velocity
+            
+            # Predict new position using velocity
             pred_center = track["center"] + track["velocity"]
-            # Construct a dummy bbox for prediction centered at pred_center
             w = track["bbox"][2] - track["bbox"][0]
             h = track["bbox"][3] - track["bbox"][1]
             pred_bbox = [pred_center[0] - w/2, pred_center[1] - h/2, 
@@ -109,17 +152,17 @@ class MultiPersonTracker:
                 bbox = det["bbox"]
                 iou = compute_iou(pred_bbox, bbox)
                 dist = compute_center_distance(pred_bbox, bbox)
-                
-                # Setup cost (minimize this)
-                # 1 - IoU (0 to 1) + Distance (0 to inf)
+                # Lower cost = better match
                 costs[r, c] = (1.0 - iou) + dist
         
-        # Greedy assignment
+        # =========================================================
+        # GREEDY MATCHING (lowest cost first)
+        # =========================================================
         assigned_track_indices = set()
         assigned_det_indices = set()
-        matches = {} # tid -> det_idx
+        matches = {}
         
-        # Flatten and sort matches by cost
+        # Sort all possible matches by cost
         possible_matches = []
         for r in range(len(track_ids)):
             for c in range(len(detections)):
@@ -131,36 +174,19 @@ class MultiPersonTracker:
             if r in assigned_track_indices or c in assigned_det_indices:
                 continue
             
-            # Check thresholds
             track_id = track_ids[r]
             
-            # Use thresholds from config
-            if cost > 2.0: # Loose threshold for combined cost, refine if needed
-                 # Check individual components if possible, but simplified here:
-                 # If cost is high, it means low IoU and high distance
-                 pass
-            
-            # Re-verify with strict thresholds for IoU or Dist
-            # For simplicity, we trust the cost, but let's double check if it's too far
-            # If cost > 1.0 it implies IoU < 0 and dist > 0 which is impossible, 
-            # OR IoU=0 and Dist > 0.
-            # config["track_iou_thres"] and ["track_center_dist_thres"]
-            # Let's map back to raw values? 
-            # Easier: Just use the cost as a proxy or re-check
-            
-            # Re-calculate to check against specific thresholds if needed, 
-            # but greedy cost matching usually robust enough.
-            # Enforce at least some overlap or closeness
-            
-            # Let's assume valid match if cost < threshold
-            # Heuristic: Match if cost is reasonable. 
-            # Only strictly filter invalid ones (too far)
+            # Cost threshold (could be tightened if needed)
+            if cost > 2.0:
+                pass  # Still allow, but could reject here
             
             matches[track_id] = c
             assigned_track_indices.add(r)
             assigned_det_indices.add(c)
         
-        # Update matched tracks
+        # =========================================================
+        # UPDATE MATCHED TRACKS
+        # =========================================================
         final_matches = {}
         for tid, det_idx in matches.items():
             det = detections[det_idx]
@@ -170,7 +196,7 @@ class MultiPersonTracker:
             track = self.tracks[tid]
             prev_center = track["center"]
             
-            # Update velocity
+            # Update velocity estimate
             velocity = center - prev_center
             
             self.tracks[tid]["bbox"] = bbox
@@ -181,15 +207,19 @@ class MultiPersonTracker:
             self.tracks[tid]["missing_count"] = 0
             
             final_matches[tid] = det_idx
-            
-        # Handle unmatched tracks (missed)
+        
+        # =========================================================
+        # HANDLE UNMATCHED TRACKS (missing detections)
+        # =========================================================
         for r, tid in enumerate(track_ids):
             if r not in assigned_track_indices:
                 self.tracks[tid]["missing_count"] += 1
                 if self.tracks[tid]["missing_count"] > self.config["track_max_missing"]:
                     del self.tracks[tid]
         
-        # Handle unmatched detections (new tracks)
+        # =========================================================
+        # CREATE NEW TRACKS FOR UNMATCHED DETECTIONS
+        # =========================================================
         for c, det in enumerate(detections):
             if c not in assigned_det_indices:
                 tid = self.next_track_id

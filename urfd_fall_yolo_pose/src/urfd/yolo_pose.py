@@ -1,23 +1,33 @@
 from ultralytics import YOLO
 import numpy as np
 import cv2
+from .preprocessing import preprocess_lowlight
 
 class YOLOPoseDetector:
-    """Wrapper for YOLOv8 pose detection with optional preprocessing."""
+    """
+    Wrapper for YOLOv8 pose detection with optional preprocessing.
     
-    def __init__(self, model_path="yolov8s-pose.pt", imgsz=640, conf_thres=0.25, iou_thres=0.45,
-                 preprocess_lowlight=False, gamma=1.3, clahe_clip=2.0, clahe_grid=8):
-        """Initialize YOLO pose detector.
+    Features:
+    - Low-light preprocessing (gamma + CLAHE)
+    - Configurable confidence and IoU thresholds
+    - Returns keypoints in COCO format (17 keypoints)
+    """
+    
+    def __init__(self, model_path="yolov8s-pose.pt", imgsz=640, conf_thres=0.25, 
+                 iou_thres=0.45, preprocess_lowlight=False, gamma=1.3, 
+                 clahe_clip=2.0, clahe_grid=8):
+        """
+        Initialize YOLO pose detector.
         
         Args:
             model_path: Path to YOLO model weights
-            imgsz: Image size for inference
-            conf_thres: Confidence threshold
-            iou_thres: IoU threshold for NMS
+            imgsz: Image size for inference (resized to this)
+            conf_thres: Confidence threshold (reject detections below this)
+            iou_thres: IoU threshold for NMS (Non-Maximum Suppression)
             preprocess_lowlight: Enable low-light preprocessing
-            gamma: Gamma correction value
-            clahe_clip: CLAHE clip limit
-            clahe_grid: CLAHE grid size
+            gamma: Gamma correction value for preprocessing
+            clahe_clip: CLAHE clip limit for preprocessing
+            clahe_grid: CLAHE grid size for preprocessing
         """
         self.model = YOLO(model_path)
         self.imgsz = imgsz
@@ -29,29 +39,30 @@ class YOLOPoseDetector:
         self.clahe_grid = clahe_grid
     
     def _preprocess(self, image):
-        """Apply low-light preprocessing if enabled."""
+        """
+        Apply low-light preprocessing if enabled.
+        
+        Uses DRY principle - delegates to preprocessing module.
+        
+        Args:
+            image: BGR image (numpy array)
+            
+        Returns:
+            Preprocessed BGR image
+        """
         if not self.preprocess_lowlight:
             return image
-        
-        # Gamma correction + CLAHE on Y channel
-        ycrcb = cv2.cvtColor(image, cv2.COLOR_BGR2YCrCb)
-        y_channel = ycrcb[:, :, 0]
-        
-        # Gamma correction
-        inv_gamma = 1.0 / self.gamma
-        table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)]).astype("uint8")
-        y_gamma = cv2.LUT(y_channel, table)
-        
-        # CLAHE
-        clahe = cv2.createCLAHE(clipLimit=self.clahe_clip, tileGridSize=(self.clahe_grid, self.clahe_grid))
-        y_clahe = clahe.apply(y_gamma)
-        
-        # Reconstruct
-        ycrcb[:, :, 0] = y_clahe
-        return cv2.cvtColor(ycrcb, cv2.COLOR_YCrCb2BGR)
+        # Reuse preprocessing function (DRY principle)
+        return preprocess_lowlight(image, self.gamma, self.clahe_clip, self.clahe_grid)
     
     def detect(self, image):
-        """Run pose detection on an image.
+        """
+        Run pose detection on an image.
+        
+        Process:
+        1. Apply preprocessing (if enabled)
+        2. Run YOLO inference
+        3. Extract bboxes, confidences, and keypoints
         
         Args:
             image: BGR image (numpy array)
@@ -60,12 +71,13 @@ class YOLOPoseDetector:
             detections: List of dicts, each containing:
                 - bbox: [x1, y1, x2, y2]
                 - conf: confidence score
-                - keypoints: array of shape (17, 3) - [x, y, conf] for each keypoint
-                - bbox_area: bbox width * height
+                - keypoints: array of shape (17, 3) - [x, y, conf]
+                - bbox_area: bounding box area
         """
-        # Apply preprocessing
+        # Apply low-light preprocessing if enabled
         processed_image = self._preprocess(image)
         
+        # Run YOLO inference
         results = self.model.predict(
             processed_image,
             imgsz=self.imgsz,
@@ -78,12 +90,12 @@ class YOLOPoseDetector:
         
         if len(results) > 0 and results[0].boxes is not None:
             result = results[0]
-            boxes = result.boxes.xyxy.cpu().numpy()
-            confs = result.boxes.conf.cpu().numpy()
+            boxes = result.boxes.xyxy.cpu().numpy()  # [N, 4] - x1, y1, x2, y2
+            confs = result.boxes.conf.cpu().numpy()  # [N]
             
-            # Extract keypoints if available
+            # Extract keypoints if available (COCO format: 17 keypoints)
             if result.keypoints is not None:
-                keypoints = result.keypoints.data.cpu().numpy()
+                keypoints = result.keypoints.data.cpu().numpy()  # [N, 17, 3]
             else:
                 keypoints = None
             
@@ -98,6 +110,7 @@ class YOLOPoseDetector:
                     "bbox_area": float(bbox_area)
                 }
                 
+                # Attach keypoints or zeros if not available
                 if keypoints is not None and i < len(keypoints):
                     det["keypoints"] = keypoints[i]
                 else:

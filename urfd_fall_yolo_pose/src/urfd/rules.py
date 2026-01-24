@@ -1,68 +1,114 @@
 import numpy as np
 
-def check_fall_candidate(features, angle_thres, ar_thres, height_drop, height_drop_thres, dy_fall_thres):
-    """Check if current frame is a fall candidate.
+def check_fall_candidate(features, angle_thres, ar_thres, height_drop, 
+                         height_drop_thres, dy_fall_thres, impact_dy_thres=5.0,
+                         high_angle_thres=65.0):
+    """
+    Check if current frame is a fall candidate.
     
-    A frame is a fall candidate if:
-    - (body_angle_deg >= angle_thres AND bbox_aspect_ratio >= ar_thres) OR
-    - height_drop >= height_drop_thres OR
-    - dy >= dy_fall_thres (fast downward motion)
+    A frame is a fall candidate if ANY of these conditions are met:
+    - PATH 1: (body_angle >= angle_thres AND AR >= ar_thres AND dy_peak >= impact_dy_thres)
+    - PATH 2: height_drop >= height_drop_thres
+    - PATH 3: dy >= dy_fall_thres (fast downward motion)
+    - PATH 4: body_angle >= high_angle_thres AND dy_peak >= 3.0 (very horizontal posture)
     
     Args:
-        features: Frame features dict
-        angle_thres: Angle threshold in degrees
-        ar_thres: Aspect ratio threshold
-        height_drop: Normalized height drop
-        height_drop_thres: Height drop threshold
-        dy_fall_thres: dy threshold for fast fall detection
-    
+        features: Frame features dict from compute_frame_features
+        angle_thres: Angle threshold in degrees for lying posture (55.0)
+        ar_thres: Aspect ratio threshold (W/H) (1.15)
+        height_drop: Normalized height drop value
+        height_drop_thres: Height drop threshold (0.18)
+        dy_fall_thres: dy threshold for fast fall detection (10.0)
+        impact_dy_thres: Minimum dy_peak for posture path (5.0)
+        high_angle_thres: High angle threshold for Path 4 (65.0)
+        
     Returns:
-        is_candidate: bool
+        is_candidate: True if frame is a fall candidate
     """
     if features["bbox"] is None:
         return False
     
-    # Path 1: Angle + AR based (requires valid features)
-    angle_ar_condition = False
-    if features["feature_valid"] and features["body_angle_deg"] is not None:
-        if features["body_angle_deg"] >= angle_thres and features["bbox_aspect_ratio"] >= ar_thres:
-            angle_ar_condition = True
+    # =========================================================
+    # BORDER INTEGRITY CHECK
+    # When bbox is clipped at image edge, AR becomes unreliable
+    # =========================================================
+    is_touching_border = features.get("is_touching_border", False)
     
-    # Path 2: Height drop based (bbox only)
+    # =========================================================
+    # PATH 1: POSTURE-BASED DETECTION (Angle + AR + Impact)
+    # Requires lying posture with some impact velocity
+    # DISABLED when border is clipped (AR unreliable)
+    # =========================================================
+    angle_ar_condition = False
+    if not is_touching_border:
+        if features["feature_valid"] and features["body_angle_deg"] is not None:
+            dy_peak = features.get("dy_peak", 0.0)
+            # Requires lying posture AND impact velocity
+            if (features["body_angle_deg"] >= angle_thres and 
+                features["bbox_aspect_ratio"] >= ar_thres and
+                dy_peak >= impact_dy_thres):
+                angle_ar_condition = True
+    
+    # =========================================================
+    # PATH 2: HEIGHT DROP DETECTION
+    # Detects significant reduction in bbox height (person collapsed)
+    # =========================================================
     height_drop_condition = height_drop >= height_drop_thres
     
-    # Path 3: Fast downward motion (dy-based)
+    # =========================================================
+    # PATH 3: FAST MOTION DETECTION
+    # Detects rapid downward movement (free fall phase)
+    # =========================================================
     dy_condition = features["dy"] >= dy_fall_thres
     
-    return angle_ar_condition or height_drop_condition or dy_condition
+    # =========================================================
+    # PATH 4: HIGH-ANGLE DETECTION (NEW - for better recall)
+    # Very horizontal posture (>65°) with minimal motion
+    # Catches slow falls and frontal falls
+    # =========================================================
+    high_angle_condition = False
+    if features["feature_valid"] and features["body_angle_deg"] is not None:
+        dy_peak = features.get("dy_peak", 0.0)
+        # Very horizontal posture with any detectable motion
+        if features["body_angle_deg"] >= high_angle_thres and dy_peak >= 3.0:
+            high_angle_condition = True
+    
+    # Any of the four paths triggers candidate status
+    return angle_ar_condition or height_drop_condition or dy_condition or high_angle_condition
 
 def check_lying_posture(features, confirm_angle_thres, confirm_ar_thres):
-    """Check if current frame shows lying-like posture.
+    """
+    Check if current frame shows lying-like posture.
     
-    Using OR logic with relaxed thresholds for maximum recall.
-    Will accept false positives to ensure we don't miss real falls.
+    Uses OR logic with relaxed thresholds for maximum recall.
     
     Args:
-        features: Frame features dict
-        confirm_angle_thres: Angle threshold for confirmation
+        features: Frame features dict from compute_frame_features
+        confirm_angle_thres: Angle threshold for confirmation (degrees)
         confirm_ar_thres: Aspect ratio threshold for confirmation
-    
+        
     Returns:
-        is_lying: bool
+        is_lying: True if posture appears to be lying down
     """
     if features["bbox"] is None:
         return False
     
-    # Check angle condition (requires valid features)
+    # =========================================================
+    # ANGLE CHECK (keypoint-based)
+    # Relaxed by 10 degrees for better recall (changed from 8)
+    # =========================================================
     angle_condition = False
     if features["feature_valid"] and features["body_angle_deg"] is not None:
-        # Moderate relaxation (8 degrees) for balanced recall/precision
-        if features["body_angle_deg"] >= (confirm_angle_thres - 8.0):
+        # Use relaxed threshold (confirm_angle_thres - 10)
+        if features["body_angle_deg"] >= (confirm_angle_thres - 10.0):
             angle_condition = True
     
-    # Check AR condition (always available)
-    # Moderate relaxation (0.17) for balanced recall/precision
-    ar_condition = features["bbox_aspect_ratio"] >= (confirm_ar_thres - 0.17)
+    # =========================================================
+    # ASPECT RATIO CHECK (bbox-based fallback)
+    # Relaxed by 0.20 for better recall (changed from 0.17)
+    # Works even when keypoints are unavailable
+    # =========================================================
+    ar_condition = features["bbox_aspect_ratio"] >= (confirm_ar_thres - 0.20)
     
-    # Use OR logic for better recall while maintaining precision
+    # OR logic: either condition triggers lying posture
     return angle_condition or ar_condition

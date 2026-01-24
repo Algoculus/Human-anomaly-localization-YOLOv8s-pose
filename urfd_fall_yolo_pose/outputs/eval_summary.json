@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-01-23T13:07:14.794863",
+  "timestamp": "2026-01-24T19:03:40.633299",
   "config": {
     "yolo_model": "yolov8s-pose.pt",
     "imgsz": 640,
@@ -19,13 +19,16 @@
     "ar_thres": 1.15,
     "confirm_angle_thres": 48.0,
     "confirm_ar_thres": 1.35,
-    "height_drop_thres": 0.22,
-    "height_drop_thres_strong": 0.3,
-    "dy_fall_thres": 13.5,
+    "height_drop_thres": 0.18,
+    "height_drop_thres_strong": 0.28,
+    "dy_fall_thres": 10.0,
     "dy_window": 5,
     "dy_short_window": 3,
     "dy_long_window": 10,
-    "dy_peak_thres": 12.5,
+    "dy_peak_thres": 8.0,
+    "border_margin": 8,
+    "impact_dy_thres": 5.0,
+    "high_angle_thres": 65.0,
     "height_drop_short_window": 5,
     "cand_enter_frames": 2,
     "cand_tolerance": 1,
@@ -52,15 +55,15 @@
   "metrics": {
     "confusion_matrix": {
       "TP": 25,
-      "TN": 37,
-      "FP": 3,
+      "TN": 38,
+      "FP": 2,
       "FN": 5
     },
-    "accuracy": 0.8857142857142857,
-    "precision": 0.8928571428571429,
+    "accuracy": 0.9,
+    "precision": 0.9259259259259259,
     "recall": 0.8333333333333334,
-    "specificity": 0.925,
-    "f1_score": 0.8620689655172413
+    "specificity": 0.95,
+    "f1_score": 0.8771929824561403
   },
   "plots": {
     "confusion_matrix": "outputs\\plots\\confusion_matrix.png",

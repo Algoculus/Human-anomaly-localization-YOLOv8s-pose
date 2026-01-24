@@ -4,13 +4,17 @@ import seaborn as sns
 import numpy as np
 from pathlib import Path
 
-# Set style
 sns.set_theme(style="whitegrid")
 plt.rcParams['figure.figsize'] = (10, 6)
 plt.rcParams['font.size'] = 11
 
 def create_plots(output_dir):
-    # Create visualization plots for evaluation results.
+    """
+    Create visualization plots for evaluation results.
+    
+    Args:
+        output_dir: Directory containing metrics.json and to save plots
+    """
     output_dir = Path(output_dir)
     plots_dir = output_dir / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
@@ -23,7 +27,6 @@ def create_plots(output_dir):
     with open(metrics_path) as f:
         metrics = json.load(f)
     
-    # 1. Confusion Matrix
     cm = [[metrics['confusion_matrix']['TN'], metrics['confusion_matrix']['FP']],
           [metrics['confusion_matrix']['FN'], metrics['confusion_matrix']['TP']]]
     
@@ -42,7 +45,6 @@ def create_plots(output_dir):
     print(f"Saved {cm_path}")
     plt.close()
     
-    # 2. Key Metrics Bar Chart
     metrics_names = ['Accuracy', 'Precision', 'Recall', 'Specificity', 'F1-Score']
     vals = [metrics['accuracy'], metrics['precision'], metrics['recall'], 
              metrics['specificity'], metrics['f1_score']]
@@ -61,7 +63,6 @@ def create_plots(output_dir):
     plt.legend()
     plt.grid(axis='y', alpha=0.3)
     
-    # Add value labels
     for bar in bars:
         height = bar.get_height()
         plt.text(bar.get_x() + bar.get_width()/2., height,

@@ -7,10 +7,22 @@ import cv2
 import numpy as np
 
 class FallbackTracker:
-    """Classical bbox tracker for propagating detections when YOLO misses."""
+    """
+    Classical bbox tracker for propagating detections when YOLO misses.
+    
+    Use cases:
+    - Motion blur causing YOLO to miss
+    - Temporary occlusion
+    - Low-light conditions
+    
+    Supported trackers:
+    - KCF (Kernelized Correlation Filter) - fast, less accurate
+    - CSRT (Channel and Spatial Reliability) - slower, more accurate
+    """
     
     def __init__(self, tracker_type="kcf", max_gap=6):
-        """Initialize fallback tracker.
+        """
+        Initialize fallback tracker.
         
         Args:
             tracker_type: "kcf", "csrt", or "none"
@@ -24,17 +36,22 @@ class FallbackTracker:
         self.is_active = False
     
     def _create_tracker(self):
-        """Create OpenCV tracker instance."""
+        """
+        Create OpenCV tracker instance.
+        
+        Handles different OpenCV versions (legacy vs new API).
+        
+        Returns:
+            OpenCV tracker or None if unavailable
+        """
         if self.tracker_type == "kcf":
+            # Try new API first, then legacy API
             try:
-                # Try new API first (OpenCV 4.5.1+)
                 return cv2.legacy.TrackerKCF_create()
             except AttributeError:
                 try:
-                    # Fall back to old API
                     return cv2.TrackerKCF_create()
                 except AttributeError:
-                    # If neither works, use None (will fall back to simple bbox propagation)
                     return None
         elif self.tracker_type == "csrt":
             try:
@@ -48,7 +65,10 @@ class FallbackTracker:
             return None
     
     def initialize(self, frame, bbox):
-        """Initialize tracker with a bbox.
+        """
+        Initialize tracker with a bbox.
+        
+        Called when YOLO successfully detects a person.
         
         Args:
             frame: Current frame (BGR)
@@ -57,7 +77,7 @@ class FallbackTracker:
         if self.tracker_type == "none":
             return
         
-        # Convert to (x, y, w, h)
+        # Convert xyxy to xywh format for OpenCV tracker
         x1, y1, x2, y2 = bbox
         w = x2 - x1
         h = y2 - y1
@@ -70,62 +90,66 @@ class FallbackTracker:
         self.missing_count = 0
     
     def update(self, frame, yolo_detections):
-        """Update tracker and return pseudo-detection if needed.
+        """
+        Update tracker and return pseudo-detection if needed.
+        
+        Logic:
+        1. If YOLO detected something: reset and return None
+        2. If within max_gap: propagate bbox using classical tracker
+        3. If beyond max_gap: give up and return None
         
         Args:
             frame: Current frame (BGR)
             yolo_detections: List of YOLO detections (may be empty)
         
         Returns:
-            pseudo_detection: Dict with bbox (and no keypoints) if propagating,
-                             None if not using fallback
+            pseudo_detection: Dict with bbox if propagating, None otherwise
         """
+        # If YOLO detected, no need for fallback
         if len(yolo_detections) > 0:
-            # YOLO detected something, reset fallback
             self.missing_count = 0
             self.is_active = False
             return None
         
-        # YOLO returned nothing
         self.missing_count += 1
         
+        # Exceeded max gap or not active
         if self.missing_count > self.max_gap or not self.is_active:
-            # Exceeded gap or not initialized
             return None
         
-        # Try to propagate bbox with tracker
+        # Fallback: use last known bbox (if no OpenCV tracker available)
         if self.tracker is None:
-            # No tracker available, use simple bbox propagation (last known bbox)
             if self.last_bbox is not None:
                 x1, y1, x2, y2 = self.last_bbox
                 pseudo_detection = {
                     "bbox": [x1, y1, x2, y2],
-                    "conf": 0.5,
+                    "conf": 0.5,  # Reduced confidence for fallback
                     "keypoints": None,
                     "bbox_area": (x2 - x1) * (y2 - y1),
-                    "is_fallback": True
+                    "is_fallback": True  # Flag for feature extraction
                 }
                 return pseudo_detection
             return None
         
+        # Update OpenCV tracker
         success, bbox_xywh = self.tracker.update(frame)
         
         if success:
+            # Convert xywh back to xyxy
             x, y, w, h = bbox_xywh
             x1, y1, x2, y2 = int(x), int(y), int(x + w), int(y + h)
             
-            # Clamp to frame bounds
+            # Clamp to frame boundaries
             h_frame, w_frame = frame.shape[:2]
             x1 = max(0, min(x1, w_frame))
             y1 = max(0, min(y1, h_frame))
             x2 = max(0, min(x2, w_frame))
             y2 = max(0, min(y2, h_frame))
             
-            # Create pseudo-detection (bbox only, no keypoints)
             pseudo_detection = {
                 "bbox": [x1, y1, x2, y2],
-                "conf": 0.5,  # Dummy confidence
-                "keypoints": None,  # No keypoints available
+                "conf": 0.5,
+                "keypoints": None,  # No keypoints from classical tracker
                 "bbox_area": (x2 - x1) * (y2 - y1),
                 "is_fallback": True
             }
@@ -133,7 +157,7 @@ class FallbackTracker:
             self.last_bbox = [x1, y1, x2, y2]
             return pseudo_detection
         else:
-            # Tracker failed
+            # Tracker lost the target
             self.is_active = False
             return None
     
