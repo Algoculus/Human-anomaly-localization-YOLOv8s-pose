@@ -48,8 +48,8 @@ export default function HomePage() {
         <motion.div variants={itemVariants} className="text-center space-y-6 pt-8">
           <div className="relative inline-block">
             <div className="absolute inset-0 blur-3xl bg-gradient-to-r from-cyan-400/20 via-blue-500/20 to-purple-500/20 rounded-full" />
-            <h1 className="relative text-5xl md:text-7xl font-black bg-gradient-to-br from-white via-gray-200 to-gray-500 bg-clip-text text-transparent tracking-tighter shadow-sm">
-              ALGO<span className="text-cyan-500">CULUS</span>
+            <h1 className="relative text-5xl md:text-7xl font-black bg-gradient-to-br from-gray-900 via-gray-500 to-gray-400 dark:from-white dark:via-gray-200 dark:to-gray-500 bg-clip-text text-transparent tracking-tighter shadow-sm">
+              ALGO<span className="text-cyan-600 dark:text-cyan-500">CULUS</span>
             </h1>
           </div>
           
