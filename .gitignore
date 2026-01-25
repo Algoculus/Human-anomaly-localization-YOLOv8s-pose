@@ -1,9 +1,13 @@
+# ============================================================================
 # Python
+# ============================================================================
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+
+# Distribution / packaging
 build/
 develop-eggs/
 dist/
@@ -20,8 +24,12 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
+
+# Installers
 pip-log.txt
 pip-delete-this-directory.txt
+
+# Testing
 .tox/
 .nox/
 .coverage
@@ -32,15 +40,18 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
-*.log
 
+# ============================================================================
 # Virtual Environments
+# ============================================================================
 venv/
 ENV/
 env/
-.venv
+.venv/
 
-# IDEs
+# ============================================================================
+# IDEs and Editors
+# ============================================================================
 .vscode/
 .idea/
 *.swp
@@ -48,69 +59,134 @@ env/
 *~
 
 # Jupyter
-.ipynb_checkpoints
+.ipynb_checkpoints/
 *.ipynb
 
-# Model files (exclude large weights)
+# ============================================================================
+# Model Files (exclude large weights)
+# ============================================================================
 *.pt
 *.pth
 *.onnx
 *.weights
 *.caffemodel
+# Allow specific model file
 !yolov8s-pose.pt
 
-# Data and outputs
+# ============================================================================
+# Data and Outputs
+# ============================================================================
+# Raw dataset
 data/
-urfd_fall_yolo_pose/outputs/ADL/
-urfd_fall_yolo_pose/outputs/FALL/
+
+# Output videos (large files)
+urfd_fall_yolo_pose/outputs/videos/
+outputs/videos/
+
+# Output results and metrics (auto-generated)
 urfd_fall_yolo_pose/outputs/*.csv
 urfd_fall_yolo_pose/outputs/*.json
+outputs/*.csv
+outputs/*.json
+
+# YOLO training runs
 urfd_fall_yolo_pose/runs/
-outputs/
-artifacts/
 runs/
-*.csv
+
+# Generic outputs and artifacts
+artifacts/
+
+# Allow specific CSV files
 !*_index.csv
 !urfd_*.csv
 !requirements.txt
 
+# Allow plots directory (for GitHub)
+!urfd_fall_yolo_pose/outputs/plots/
+!urfd_fall_yolo_pose/outputs/plots/*.png
+!outputs/plots/
+!outputs/plots/*.png
+
+# ============================================================================
+# Web Application
+# ============================================================================
 # Backend artifacts
 web/backend/artifacts/
+web/backend/runs/
 
-# Environment variables
+# Frontend
+web/frontend/node_modules/
+web/frontend/dist/
+web/frontend/.next/
+web/frontend/build/
+
+# ============================================================================
+# Environment Variables
+# ============================================================================
 .env
 .env.local
+.env.*.local
 
-# OS
+# ============================================================================
+# Operating System
+# ============================================================================
+# Windows
 Thumbs.db
-.DS_Store
+Desktop.ini
 
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+
+# ============================================================================
 # Logs
+# ============================================================================
 logs/
 *.log
+*.log.*
 
-# Temporary files
+# ============================================================================
+# Temporary Files
+# ============================================================================
 tmp/
 temp/
 *.tmp
+*.temp
 
-# Media files (large video/image files)
+# ============================================================================
+# Media Files (large video/image files)
+# ============================================================================
 *.mp4
 *.avi
 *.mov
 *.mkv
+
+# Images (general)
 *.jpg
 *.jpeg
 *.png
+
+# Allow documentation images
 !docs/**/*.png
 !docs/**/*.jpg
+!docs/**/*.jpeg
 !README*.png
 !README*.jpg
+!README*.jpeg
 
-# Compressed files
+# Allow plots (already specified above, but being explicit)
+!**/plots/*.png
+!**/plots/*.jpg
+
+# ============================================================================
+# Compressed Archives
+# ============================================================================
 *.zip
 *.tar.gz
+*.tar.bz2
 *.rar
-
-# Node modules (frontend)
-node_modules/
+*.7z
