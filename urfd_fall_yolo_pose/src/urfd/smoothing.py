@@ -34,6 +34,7 @@ class FallStateMachine:
         self.height_history = []     # Bbox heights for drop computation
         self.score_accumulator = 0.0 # EMA (Exponential Moving Average) score
         self.fall_confirmed = False
+        self.confirmed_frame_count = 0  # Track how long we've been in CONFIRMED state
         
         # =========================================================
         # TEMPORAL DISCRIMINATORS
@@ -41,6 +42,7 @@ class FallStateMachine:
         self.recovery_history = []   # Track upright recovery frames
         self.dy_peak_history = []    # Track dy peaks for slow transition detection
         self.motion_settled = False
+        self.post_confirm_lying_count = 0  # Track lying frames after confirmation
     
     def _compute_height_drop(self, current_height):
         """
@@ -152,6 +154,49 @@ class FallStateMachine:
             return max_dy_peak < slow_lie_max_dy_peak
         
         return False
+    
+    def _is_controlled_lying(self, features, height_drop):
+        """
+        Detect if person is lying down in a controlled manner (not a fall).
+        
+        Controlled lying characteristics:
+        - Slow, gradual descent (low dy_peak)
+        - Maintained posture control (consistent AR changes)
+        - No sudden impact markers
+        
+        Args:
+            features: Current frame features
+            height_drop: Current normalized height drop
+            
+        Returns:
+            is_controlled: True if lying appears intentional/controlled
+        """
+        # Need enough history to assess motion pattern
+        if len(self.dy_peak_history) < 5:
+            return False
+        
+        recent_peaks = self.dy_peak_history[-5:]
+        max_recent_peak = max(recent_peaks)
+        avg_recent_peak = np.mean(recent_peaks)
+        
+        # Controlled lying: consistently low motion, no spikes
+        # Falls typically have at least one high dy_peak (impact)
+        # Tightened thresholds for better discrimination
+        very_slow_descent = max_recent_peak < 10.0 and avg_recent_peak < 6.0
+        
+        # Also check if height drop is gradual (not sudden)
+        gradual_drop = height_drop < 0.22
+        
+        # Additional check: if we have longer history, look for any spike
+        had_impact_recently = False
+        if len(self.dy_peak_history) >= 8:
+            # Check if there was any significant peak in recent history
+            for peak in self.dy_peak_history[-8:]:
+                if peak > 15.0:  # Significant impact indicator
+                    had_impact_recently = True
+                    break
+        
+        return very_slow_descent and gradual_drop and not had_impact_recently
     
     def _check_recovery(self, features):
         """
@@ -283,7 +328,9 @@ class FallStateMachine:
             height_drop,
             self.config["height_drop_thres"],
             self.config["dy_fall_thres"],
-            self.config.get("impact_dy_thres", 10.0)
+            self.config.get("impact_dy_thres", 4.0),
+            self.config.get("high_angle_thres", 60.0),
+            self.config.get("sustained_lying_thres", 50.0)
         )
         
         # Check lying posture (relaxed thresholds for confirmation)
@@ -320,6 +367,9 @@ class FallStateMachine:
             # Check for recovery (person stood up)
             has_recovered = self._check_recovery(features)
             
+            # Check for controlled lying (intentional lying down, not a fall)
+            is_controlled = self._is_controlled_lying(features, height_drop)
+            
             if has_recovered:
                 # Recovery detected - reset to NORMAL
                 self.state = "NORMAL"
@@ -329,17 +379,21 @@ class FallStateMachine:
             
             # =========================================================
             # MULTI-PATH CONFIRMATION LOGIC
+            # More paths = better recall for different fall types
             # =========================================================
             if lying_count >= self.config["confirm_frames"]:
                 dy_peak = features.get("dy_peak", 0.0)
                 dy_peak_thres = self.config["dy_peak_thres"]
-                height_drop_strong = self.config.get("height_drop_thres_strong", 0.3)
-                height_drop_moderate = 0.22
+                height_drop_strong = self.config.get("height_drop_thres_strong", 0.25)
+                height_drop_moderate = 0.18
+                height_drop_light = 0.12
                 
-                # Relax dy threshold when height drop is present
+                # Relax dy threshold based on height drop level
                 effective_dy_thres = dy_peak_thres
                 if height_drop >= height_drop_moderate:
-                    effective_dy_thres *= 0.70
+                    effective_dy_thres *= 0.60  # More relaxed
+                elif height_drop >= height_drop_light:
+                    effective_dy_thres *= 0.75
                 
                 # PATH 1: Fast motion with impact
                 fast_motion = dy_peak >= effective_dy_thres
@@ -348,11 +402,34 @@ class FallStateMachine:
                 strong_height = (height_drop >= height_drop_strong and 
                                 lying_count >= self.config["confirm_frames"])
                 
-                # PATH 3: Moderate height drop + very sustained lying
+                # PATH 3: Moderate height drop + sustained lying
                 moderate_height = (height_drop >= height_drop_moderate and 
-                                  lying_count >= self.config["confirm_frames"] + 3)
+                                  lying_count >= self.config["confirm_frames"] + 1)
                 
-                can_confirm = fast_motion or strong_height or moderate_height
+                # PATH 4: Light height drop + very sustained lying
+                light_height = (height_drop >= height_drop_light and
+                               lying_count >= self.config["confirm_frames"] + 3)
+                
+                # PATH 5: Posture-only confirmation (high angle + high AR sustained)
+                posture_only = False
+                if features["feature_valid"] and features["body_angle_deg"] is not None:
+                    if (features["body_angle_deg"] >= 55.0 and 
+                        features["bbox_aspect_ratio"] >= 1.4 and
+                        lying_count >= self.config["confirm_frames"] + 2):
+                        posture_only = True
+                
+                # PATH 6: AR-dominant confirmation (very wide bbox sustained)
+                ar_dominant = (features["bbox_aspect_ratio"] >= 1.7 and
+                              lying_count >= self.config["confirm_frames"] + 1)
+                
+                can_confirm = (fast_motion or strong_height or moderate_height or 
+                              light_height or posture_only or ar_dominant)
+                
+                # VETO: Block confirmation if this looks like controlled lying
+                # But only if there's no strong evidence of a fall
+                # Stricter veto: apply unless there's very strong evidence
+                if is_controlled and not (fast_motion or (strong_height and dy_peak >= 4.0)):
+                    can_confirm = False
                 
                 if can_confirm:
                     self.state = "FALL_CONFIRMED"
@@ -366,10 +443,25 @@ class FallStateMachine:
                     self.candidate_history = []
         
         elif self.state == "FALL_CONFIRMED":
+            self.confirmed_frame_count += 1
+            
+            # Check if person is still lying
+            if is_lying:
+                self.post_confirm_lying_count += 1
+            
             # Check for recovery (person stands up after fall alarm)
             has_recovered = self._check_recovery(features)
             
-            if has_recovered:
+            # Early recovery check: if person stands up very quickly after confirmation,
+            # it might have been a false positive (controlled lie-down-stand-up)
+            early_recovery = False
+            if self.confirmed_frame_count <= 20:  # Within first 20 frames of confirmation (relaxed from 15)
+                # If not lying in most of these frames, likely a quick stand-up
+                # Stricter: require lying in at least 60% of frames
+                if self.post_confirm_lying_count < self.confirmed_frame_count * 0.6:
+                    early_recovery = has_recovered
+            
+            if has_recovered or early_recovery:
                 # Recovery - reset everything
                 self.state = "NORMAL"
                 self.fall_confirmed = False
@@ -377,6 +469,8 @@ class FallStateMachine:
                 self.candidate_history = []
                 self.confirm_history = []
                 self.recovery_history = []
+                self.confirmed_frame_count = 0
+                self.post_confirm_lying_count = 0
                 print("RECOVERY DETECTED: Person stood up, resetting to NORMAL state")
             else:
                 # Maintain confirmed state

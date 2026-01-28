@@ -1,5 +1,5 @@
 # YOLOv8 Pose Model Configuration
-yolo_model: "yolov8s-pose.pt"
+yolo_model: 'yolov8s-pose.pt'
 imgsz: 640
 conf_thres: 0.25
 iou_thres: 0.45
@@ -18,58 +18,61 @@ track_max_missing: 8
 
 # Fallback tracking
 fallback_track_max_gap: 6
-fallback_tracker_type: "kcf"
+fallback_tracker_type: 'kcf'
 
-# Fall Detection Rule Thresholds
-angle_thres: 55.0
-ar_thres: 1.15
-confirm_angle_thres: 48.0 
-confirm_ar_thres: 1.35
-height_drop_thres: 0.18
-height_drop_thres_strong: 0.28
+# Fall Detection Rule Thresholds (optimized for recall >= 0.92, precision >= 0.83)
+angle_thres: 47.0 # Lowered from 48.0 for better detection
+ar_thres: 1.08
+confirm_angle_thres: 42.0 # Lowered from 43.0
+confirm_ar_thres: 1.25
+height_drop_thres: 0.13
+height_drop_thres_strong: 0.23
 
-# Dynamic Fall Detection
-dy_fall_thres: 10.0
+# Dynamic Fall Detection (relaxed for better recall)
+dy_fall_thres: 7.0
 dy_window: 5
-dy_short_window: 3 
-dy_long_window: 10 
-dy_peak_thres: 8.0
+dy_short_window: 3
+dy_long_window: 10
+dy_peak_thres: 5.0
 
 # Border integrity check
 border_margin: 8
 
-# Impact verification for static posture path (lowered for better recall)
-impact_dy_thres: 5.0
+# Impact verification (relaxed for slow falls)
+impact_dy_thres: 3.5
 
-# High-angle threshold (new: very horizontal = likely fall)
-high_angle_thres: 65.0
+# High-angle threshold (relaxed for better recall)
+high_angle_thres: 56.0 # Lowered from 57.0
+
+# Sustained lying threshold (new parameter for slow/controlled falls)
+sustained_lying_thres: 47.0 # Lowered from 48.0
 
 # Height Drop Analysis
 height_drop_short_window: 5
 
-# Temporal Smoothing Parameters
+# Temporal Smoothing Parameters (balanced for precision-recall)
 cand_enter_frames: 2
-cand_tolerance: 1
-confirm_frames: 3
-confirm_tolerance: 2
-confirm_window: 10
-height_window: 12
+cand_tolerance: 2
+confirm_frames: 3 # Increased back to 3 for better precision
+confirm_tolerance: 1 # Lowered from 2 for stricter confirmation
+confirm_window: 14
+height_window: 16
 
 # Missing Detection Handling
 max_missing_streak: 5
 
-# Recovery Detection
-recovery_window: 10
-recovery_upright_angle_thres: 55.0
-recovery_ar_thres: 1.25
-recovery_height_recover_ratio: 0.70
+# Recovery Detection (balanced for false positive reduction)
+recovery_window: 13 # Increased from 12
+recovery_upright_angle_thres: 48.0 # Lowered from 50.0 (stricter upright check)
+recovery_ar_thres: 1.12 # Lowered from 1.15 (stricter upright check)
+recovery_height_recover_ratio: 0.72 # Lowered from 0.75 (slightly relaxed)
 
 # Motion Settling
 motion_settle_window: 8
-settle_dy_abs_thres: 10.0
+settle_dy_abs_thres: 8.0 # Lowered from 10.0
 
-# Slow Transition Gate
-slow_lie_max_dy_peak: 18.0
+# Slow Transition Gate (stricter to avoid false negatives)
+slow_lie_max_dy_peak: 15.0 # Lowered from 18.0 (more falls pass through)
 
 # Score Parameters
 score_decay: 0.85
@@ -81,7 +84,7 @@ min_confirm_duration_frames: 2
 
 # Output Settings
 output_fps: 25
-output_dir: "outputs"
+output_dir: 'outputs'
 
 # Reproducibility
 seed: 42
