@@ -33,7 +33,7 @@ dy_fall_thres: 10.0
 dy_window: 5
 dy_short_window: 3 
 dy_long_window: 10 
-dy_peak_thres: 8.0
+dy_peak_thres: 7.0
 
 # Border integrity check
 border_margin: 8
@@ -50,7 +50,7 @@ height_drop_short_window: 5
 # Temporal Smoothing Parameters
 cand_enter_frames: 2
 cand_tolerance: 1
-confirm_frames: 3
+confirm_frames: 2
 confirm_tolerance: 2
 confirm_window: 10
 height_window: 12

@@ -189,11 +189,18 @@ def eval_all(root_dir, index_path, config_path, no_videos=False):
     print(f"Deleted {len(old_videos)} old videos, {len(old_plots)} old plots")
     
     index_path = Path(index_path)
-    if not index_path.exists():
-        print(f"Index file {index_path} not found. Preparing dataset...")
+    # If file exists but is empty, pandas will throw EmptyDataError.
+    # Treat empty index the same as missing: regenerate it.
+    if (not index_path.exists()) or index_path.stat().st_size == 0:
+        print(f"Index file {index_path} missing/empty. Preparing dataset...")
         prepare_urfd(root_dir, index_path)
-    
-    df_index = pd.read_csv(index_path)
+
+    try:
+        df_index = pd.read_csv(index_path)
+    except pd.errors.EmptyDataError:
+        print(f"Index file {index_path} is empty. Re-preparing dataset...")
+        prepare_urfd(root_dir, index_path)
+        df_index = pd.read_csv(index_path)
     print(f"Loaded {len(df_index)} sequences from index")
     
     print("Initializing YOLOv8s-pose detector...")

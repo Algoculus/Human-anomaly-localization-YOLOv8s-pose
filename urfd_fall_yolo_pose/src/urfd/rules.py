@@ -11,6 +11,7 @@ def check_fall_candidate(features, angle_thres, ar_thres, height_drop,
     - PATH 2: height_drop >= height_drop_thres
     - PATH 3: dy >= dy_fall_thres (fast downward motion)
     - PATH 4: body_angle >= high_angle_thres AND dy_peak >= 3.0 (very horizontal posture)
+    - PATH 5: (BORDER SAFE) body_angle >= (angle_thres + 5) AND dy_peak >= impact_dy_thres
     
     Args:
         features: Frame features dict from compute_frame_features
@@ -40,6 +41,7 @@ def check_fall_candidate(features, angle_thres, ar_thres, height_drop,
     # DISABLED when border is clipped (AR unreliable)
     # =========================================================
     angle_ar_condition = False
+    border_angle_condition = False
     if not is_touching_border:
         if features["feature_valid"] and features["body_angle_deg"] is not None:
             dy_peak = features.get("dy_peak", 0.0)
@@ -48,6 +50,14 @@ def check_fall_candidate(features, angle_thres, ar_thres, height_drop,
                 features["bbox_aspect_ratio"] >= ar_thres and
                 dy_peak >= impact_dy_thres):
                 angle_ar_condition = True
+    else:
+        # BORDER SAFE: AR can be unreliable when bbox is clipped at image edges.
+        # Use a slightly stricter angle threshold, and still require impact-like motion.
+        if features["feature_valid"] and features["body_angle_deg"] is not None:
+            dy_peak = features.get("dy_peak", 0.0)
+            if (features["body_angle_deg"] >= (angle_thres + 5.0) and
+                dy_peak >= impact_dy_thres):
+                border_angle_condition = True
     
     # =========================================================
     # PATH 2: HEIGHT DROP DETECTION
@@ -74,7 +84,13 @@ def check_fall_candidate(features, angle_thres, ar_thres, height_drop,
             high_angle_condition = True
     
     # Any of the four paths triggers candidate status
-    return angle_ar_condition or height_drop_condition or dy_condition or high_angle_condition
+    return (
+        angle_ar_condition
+        or border_angle_condition
+        or height_drop_condition
+        or dy_condition
+        or high_angle_condition
+    )
 
 def check_lying_posture(features, confirm_angle_thres, confirm_ar_thres):
     """
