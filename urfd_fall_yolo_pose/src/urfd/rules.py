@@ -1,152 +1,192 @@
+"""
+Fall Detection Rules Module - Simplified
+
+Clean implementation with single unified scoring strategy.
+Uses 4-5 features from YOLO + Paper's pre-extracted features.
+"""
+
 import numpy as np
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 
-def check_fall_candidate(features, angle_thres, ar_thres, height_drop, 
-                         height_drop_thres, dy_fall_thres, impact_dy_thres=4.0,
-                         high_angle_thres=60.0, sustained_lying_thres=50.0):
-    """
-    Check if current frame is a fall candidate.
+
+@dataclass
+class FeatureContribution:
+    """Single feature's contribution to fall score."""
+    name: str
+    value: float
+    weight: float
+    score: float
+
+
+@dataclass
+class FallScore:
+    """Fall confidence score with explainability."""
+    confidence: float = 0.0
+    contributions: List[FeatureContribution] = field(default_factory=list)
     
-    A frame is a fall candidate if ANY of these conditions are met:
-    - PATH 1: (body_angle >= angle_thres AND AR >= ar_thres AND dy_peak >= impact_dy_thres)
-    - PATH 2: height_drop >= height_drop_thres
-    - PATH 3: dy >= dy_fall_thres (fast downward motion)
-    - PATH 4: body_angle >= high_angle_thres AND dy_peak >= 2.0 (horizontal posture)
-    - PATH 5: sustained_lying (high angle + high AR, no motion required - for slow falls)
-    - PATH 6: AR-only path for very wide bbox (> 1.6) with any downward motion
+    def get_top_features(self, n: int = 3) -> List[tuple]:
+        """Get top N contributing features."""
+        sorted_contribs = sorted(self.contributions, key=lambda x: abs(x.score), reverse=True)
+        return [(c.name, c.value, c.score) for c in sorted_contribs[:n]]
+
+
+class FallScorer:
+    """
+    Simplified fall detection scorer.
+    
+    Uses linear combination of 4 core features:
+    1. hw_ratio: Width/Height (>1 = lying posture)
+    2. height_ratio: Current height / Baseline (<1 = fallen)
+    3. floor_distance: Vertical position (>0.7 = near floor)
+    4. position_variance: Motion indicator (high = active movement)
+    
+    Optional:
+    5. MaxStdXZ: Paper's key feature (if available from pre-extracted)
+    """
+    
+    # Default SVM-learned weights (tuned for balance)
+    # Floor exercises have high floor_distance but low hw_ratio
+    # Falls have both high floor_distance AND high hw_ratio
+    DEFAULT_WEIGHTS = {
+        'hw_ratio': 2.5,        # Increased: prioritize lying posture
+        'height_ratio': -6.0,   # Reduced penalty for height change
+        'floor_distance': 8.0,  # Reduced: floor exercises also have high floor_dist
+        'variance_boost': 2.5,
+        'max_std_xz': 0.5,
+        'intercept': -10.0      # Increased: harder to trigger (reduces FPs)
+    }
+    
+    def __init__(self, config: Dict):
+        """
+        Args:
+            config: Configuration dict with thresholds and weights
+        """
+        self.config = config
+        
+        # Load weights from config or use defaults
+        weights_cfg = config.get('svm_weights', {})
+        self.weights = {
+            'hw_ratio': weights_cfg.get('hw_ratio', self.DEFAULT_WEIGHTS['hw_ratio']),
+            'height_ratio': weights_cfg.get('height_ratio', self.DEFAULT_WEIGHTS['height_ratio']),
+            'floor_distance': weights_cfg.get('floor_distance', self.DEFAULT_WEIGHTS['floor_distance']),
+            'variance_boost': weights_cfg.get('variance_boost', self.DEFAULT_WEIGHTS['variance_boost']),
+            'max_std_xz': weights_cfg.get('max_std_xz', self.DEFAULT_WEIGHTS['max_std_xz']),
+            'intercept': weights_cfg.get('intercept', self.DEFAULT_WEIGHTS['intercept'])
+        }
+        
+        # Thresholds
+        thresholds = config.get('thresholds', {})
+        self.variance_threshold = thresholds.get('variance_threshold', 10.0)
+        self.depth_threshold = thresholds.get('depth_threshold', 53.0)
+        
+        # Hypothesis/Verification thresholds
+        hypothesis = config.get('hypothesis', {})
+        self.hypothesis_threshold = hypothesis.get('early_score_thres', 0.35)
+        
+        verification = config.get('verification', {})
+        self.verification_threshold = verification.get('verify_score_thres', 0.45)
+    
+    def _sigmoid(self, x: float, scale: float = 1.0) -> float:
+        """Apply sigmoid to map score to [0, 1]."""
+        return 1.0 / (1.0 + np.exp(-scale * x))
+    
+    def compute_fall_confidence(self, features: Dict) -> FallScore:
+        """
+        Compute fall confidence from features.
+        
+        Args:
+            features: Dict with keys: hw_ratio, height_ratio, floor_distance,
+                      position_variance, depth_mean, max_std_xz (optional)
+                      
+        Returns:
+            FallScore with confidence [0, 1] and feature contributions
+        """
+        result = FallScore()
+        contributions = []
+        
+        # Extract features
+        hw_ratio = features.get('hw_ratio', 0.0)
+        height_ratio = features.get('height_ratio', 1.0)
+        floor_distance = features.get('floor_distance', 0.0)
+        variance = features.get('position_variance', 0.0)
+        depth_mean = features.get('depth_mean', 0.0)
+        max_std_xz = features.get('max_std_xz', 0.0)
+        
+        # Compute linear score
+        score = self.weights['intercept']
+        
+        # Feature 1: HW Ratio (>1 indicates lying)
+        hw_contrib = self.weights['hw_ratio'] * hw_ratio
+        score += hw_contrib
+        contributions.append(FeatureContribution('hw_ratio', hw_ratio, self.weights['hw_ratio'], hw_contrib))
+        
+        # Feature 2: Height Ratio (< 1 indicates fallen)
+        hr_contrib = self.weights['height_ratio'] * height_ratio
+        score += hr_contrib
+        contributions.append(FeatureContribution('height_ratio', height_ratio, self.weights['height_ratio'], hr_contrib))
+        
+        # Feature 3: Floor Distance (> 0.7 indicates near floor)
+        fd_contrib = self.weights['floor_distance'] * floor_distance
+        score += fd_contrib
+        contributions.append(FeatureContribution('floor_distance', floor_distance, self.weights['floor_distance'], fd_contrib))
+        
+        # Feature 4: Variance Boost (high motion = likely fall)
+        var_boost = 0.0
+        if variance > self.variance_threshold:
+            var_boost = self.weights['variance_boost']
+            score += var_boost
+        contributions.append(FeatureContribution('variance', variance, 1.0, var_boost))
+        
+        # Feature 5: MaxStdXZ from paper (if available)
+        if max_std_xz > 0:
+            # Paper uses MaxStdXZ as key fall indicator
+            # High values indicate fall motion signature
+            msx_contrib = self.weights['max_std_xz'] * max_std_xz
+            score += msx_contrib
+            contributions.append(FeatureContribution('max_std_xz', max_std_xz, self.weights['max_std_xz'], msx_contrib))
+        
+        # Depth penalty for elevated surfaces (sofa detection)
+        if depth_mean > 0 and depth_mean < self.depth_threshold and variance < self.variance_threshold:
+            # Static + Elevated = Likely on furniture, not floor fall
+            score -= 5.0
+            contributions.append(FeatureContribution('depth_penalty', depth_mean, -5.0, -5.0))
+        
+        # Convert to probability
+        result.confidence = self._sigmoid(score)
+        result.contributions = contributions
+        
+        return result
+    
+    def is_hypothesis_trigger(self, features: Dict, score: FallScore = None) -> bool:
+        """Check if features should trigger hypothesis state."""
+        if score is None:
+            score = self.compute_fall_confidence(features)
+        return score.confidence >= self.hypothesis_threshold
+    
+    def is_verification_confirm(self, features: Dict, score: FallScore = None) -> bool:
+        """Check if features confirm fall in verification state."""
+        if score is None:
+            score = self.compute_fall_confidence(features)
+        return score.confidence >= self.verification_threshold
+
+
+def check_lying_posture(features: Dict, hw_ratio_thres: float = 1.1, height_ratio_thres: float = 0.65) -> bool:
+    """
+    Simple check for lying posture.
     
     Args:
-        features: Frame features dict from compute_frame_features
-        angle_thres: Angle threshold in degrees for lying posture (50.0)
-        ar_thres: Aspect ratio threshold (W/H) (1.10)
-        height_drop: Normalized height drop value
-        height_drop_thres: Height drop threshold (0.15)
-        dy_fall_thres: dy threshold for fast fall detection (8.0)
-        impact_dy_thres: Minimum dy_peak for posture path (4.0)
-        high_angle_thres: High angle threshold for Path 4 (60.0)
-        sustained_lying_thres: Angle threshold for sustained lying (50.0)
+        features: Feature dict
+        hw_ratio_thres: Width/Height threshold (>1 = lying)
+        height_ratio_thres: Height ratio threshold (<0.65 = fallen height)
         
     Returns:
-        is_candidate: True if frame is a fall candidate
+        True if lying posture detected
     """
-    if features["bbox"] is None:
-        return False
+    hw_ratio = features.get('hw_ratio', 0.0)
+    height_ratio = features.get('height_ratio', 1.0)
     
-    # =========================================================
-    # BORDER INTEGRITY CHECK
-    # When bbox is clipped at image edge, AR becomes unreliable
-    # =========================================================
-    is_touching_border = features.get("is_touching_border", False)
+    is_wide = hw_ratio > hw_ratio_thres
+    is_short = height_ratio < height_ratio_thres
     
-    # =========================================================
-    # PATH 1: POSTURE-BASED DETECTION (Angle + AR + Impact)
-    # Requires lying posture with some impact velocity
-    # DISABLED when border is clipped (AR unreliable)
-    # =========================================================
-    angle_ar_condition = False
-    if not is_touching_border:
-        if features["feature_valid"] and features["body_angle_deg"] is not None:
-            dy_peak = features.get("dy_peak", 0.0)
-            # Requires lying posture AND impact velocity (relaxed)
-            if (features["body_angle_deg"] >= angle_thres and 
-                features["bbox_aspect_ratio"] >= ar_thres and
-                dy_peak >= impact_dy_thres):
-                angle_ar_condition = True
-    
-    # =========================================================
-    # PATH 2: HEIGHT DROP DETECTION
-    # Detects significant reduction in bbox height (person collapsed)
-    # =========================================================
-    height_drop_condition = height_drop >= height_drop_thres
-    
-    # =========================================================
-    # PATH 3: FAST MOTION DETECTION
-    # Detects rapid downward movement (free fall phase)
-    # =========================================================
-    dy_condition = features["dy"] >= dy_fall_thres
-    
-    # =========================================================
-    # PATH 4: HIGH-ANGLE DETECTION (horizontal posture with motion)
-    # Catches slow falls and frontal falls
-    # =========================================================
-    high_angle_condition = False
-    if features["feature_valid"] and features["body_angle_deg"] is not None:
-        dy_peak = features.get("dy_peak", 0.0)
-        # Horizontal posture with any detectable motion
-        if features["body_angle_deg"] >= high_angle_thres and dy_peak >= 2.0:
-            high_angle_condition = True
-    
-    # =========================================================
-    # PATH 5: SUSTAINED LYING DETECTION (for slow/controlled falls)
-    # High angle + high AR without requiring motion
-    # Catches cases where person slowly lowers to ground
-    # =========================================================
-    sustained_lying_condition = False
-    if not is_touching_border:
-        if features["feature_valid"] and features["body_angle_deg"] is not None:
-            # Very horizontal (>50°) with wide bbox (AR > 1.3)
-            if (features["body_angle_deg"] >= sustained_lying_thres and 
-                features["bbox_aspect_ratio"] >= 1.3):
-                sustained_lying_condition = True
-    
-    # =========================================================
-    # PATH 6: WIDE BBOX DETECTION (AR-focused)
-    # Very wide bbox (AR > 1.6) indicates lying, with any downward motion
-    # =========================================================
-    wide_bbox_condition = False
-    if not is_touching_border:
-        dy = features.get("dy", 0.0)
-        # Very wide aspect ratio with some downward movement
-        if features["bbox_aspect_ratio"] >= 1.6 and dy > 1.0:
-            wide_bbox_condition = True
-    
-    # Any of the six paths triggers candidate status
-    return (angle_ar_condition or height_drop_condition or dy_condition or 
-            high_angle_condition or sustained_lying_condition or wide_bbox_condition)
-
-def check_lying_posture(features, confirm_angle_thres, confirm_ar_thres):
-    """
-    Check if current frame shows lying-like posture.
-    
-    Uses OR logic with relaxed thresholds for maximum recall.
-    
-    Args:
-        features: Frame features dict from compute_frame_features
-        confirm_angle_thres: Angle threshold for confirmation (degrees)
-        confirm_ar_thres: Aspect ratio threshold for confirmation
-        
-    Returns:
-        is_lying: True if posture appears to be lying down
-    """
-    if features["bbox"] is None:
-        return False
-    
-    # =========================================================
-    # ANGLE CHECK (keypoint-based)
-    # Relaxed by 12 degrees for better recall
-    # =========================================================
-    angle_condition = False
-    if features["feature_valid"] and features["body_angle_deg"] is not None:
-        # Use relaxed threshold (confirm_angle_thres - 12)
-        if features["body_angle_deg"] >= (confirm_angle_thres - 12.0):
-            angle_condition = True
-    
-    # =========================================================
-    # ASPECT RATIO CHECK (bbox-based fallback)
-    # Relaxed by 0.25 for better recall
-    # Works even when keypoints are unavailable
-    # =========================================================
-    ar_condition = features["bbox_aspect_ratio"] >= (confirm_ar_thres - 0.25)
-    
-    # =========================================================
-    # COMBINED CHECK: Moderate angle + moderate AR
-    # Catches edge cases where neither alone crosses threshold
-    # =========================================================
-    combined_condition = False
-    if features["feature_valid"] and features["body_angle_deg"] is not None:
-        # Moderate angle (>35°) combined with moderate AR (>1.0)
-        if (features["body_angle_deg"] >= (confirm_angle_thres - 18.0) and 
-            features["bbox_aspect_ratio"] >= (confirm_ar_thres - 0.35)):
-            combined_condition = True
-    
-    # Any condition triggers lying posture
-    return angle_condition or ar_condition or combined_condition
+    return is_wide or is_short

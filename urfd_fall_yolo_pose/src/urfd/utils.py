@@ -156,3 +156,60 @@ def set_seed(seed):
         torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
+
+def get_depth_path_from_rgb(rgb_path: str) -> str:
+    """
+    Construct Depth map path from RGB image path for URFD dataset.
+    
+    Structure:
+    RGB: .../fall-XX-cam0-rgb/fall-XX-cam0-rgb-YYY.png
+    Depth: .../fall-XX-cam0-d/fall-XX-cam0-d-YYY.png
+    
+    Logic:
+    1. Replace 'rgb' with 'd' in folder name and filename.
+    2. Check existence.
+    """
+    import os
+    
+    if "rgb" not in rgb_path:
+        return None
+        
+    # Replace 'rgb' with 'd' strictly for the last part of path
+    # Assuming standard URFD naming
+    depth_path = rgb_path.replace("rgb", "d")
+    
+    if os.path.exists(depth_path):
+        return depth_path
+    return None
+
+def load_depth_map(depth_path: str):
+    """
+    Load depth map (16-bit PNG) and convert to meters.
+    URFD Depth is typically 1000 scales (mm).
+    """
+    import cv2
+    import os
+    if not depth_path:
+        return None
+        
+    # Load check
+    if not os.path.exists(depth_path):
+        return None
+        
+    # Load as -1 to keep original depth info (16-bit or 8-bit)
+    depth_img = cv2.imread(depth_path, -1)
+    
+    if depth_img is None:
+        return None
+        
+    # Convert to meters (URFD depth is usually in mm)
+    # Check max value to confirm scale. If > 255, it's mm.
+    if depth_img.max() > 255:
+        depth_m = depth_img.astype(np.float32) / 1000.0
+    else:
+        # Fallback or unknown scale? 
+        # For now assume it's normalized 0-255 map? unlikely for Kinect raw.
+        # But URFD paper says Kinect. It should be 16-bit.
+        depth_m = depth_img.astype(np.float32) / 255.0 * 5.0 # Max range 5m guess?
+        
+    return depth_m

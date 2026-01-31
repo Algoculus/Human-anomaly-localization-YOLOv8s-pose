@@ -1,4 +1,17 @@
+# =========================================================
+# Fall Detection Configuration
+# Hypothesis→Verification Dual-Tier Architecture
+# =========================================================
+
+# Detection Mode
+# - 'demo': Early decision for short clips (~0.2-0.5s trigger)
+# - 'realtime': Full verification with confirmation buffer (~0.5-2s)
+detection_mode: 'realtime'
+fps: 30  # Video FPS for time-based normalization
+
+# =========================================================
 # YOLOv8 Pose Model Configuration
+# =========================================================
 yolo_model: 'yolov8s-pose.pt'
 imgsz: 640
 conf_thres: 0.25
@@ -11,6 +24,9 @@ gamma: 1.3
 clahe_clip: 2.0
 clahe_grid: 8
 
+# =========================================================
+# Tracking Configuration
+# =========================================================
 # Primary Person Tracking
 track_iou_thres: 0.3
 track_center_dist_thres: 1.5
@@ -20,71 +36,149 @@ track_max_missing: 8
 fallback_track_max_gap: 6
 fallback_tracker_type: 'kcf'
 
-# Fall Detection Rule Thresholds (optimized for recall >= 0.92, precision >= 0.83)
-angle_thres: 47.0 # Lowered from 48.0 for better detection
-ar_thres: 1.08
-confirm_angle_thres: 42.0 # Lowered from 43.0
-confirm_ar_thres: 1.25
-height_drop_thres: 0.13
+# =========================================================
+# Hypothesis Trigger (Tier 1)
+# Fast detection for short clips
+# =========================================================
+hypothesis:
+  early_score_thres: 0.35   # Minimum score to enter HYPOTHESIS state
+  early_score_high: 0.65    # High confidence for immediate FALL (demo mode)
+  early_frames: 3           # Max frames for early decision (~0.1s at 30fps)
+
+# =========================================================
+# Verification (Tier 2 - realtime mode)
+# Confirmation buffer for false positive reduction
+# =========================================================
+verification: # Thresholds
+  hypothesis_threshold: 0.35   # Trigger investigation
+  verify_score_thres: 0.45     # Trigger confirmation (SVM Prob > 0.45)
+  
+  # Confirmation logic
+  confirm_frames: 8            # Frames to hold state before alert
+  confirm_window: 20           # Window size for confirmation check
+  min_confirm_duration_frames: 1 # Min frames above threshold after impact
+  post_motion_thres: 3.0    # Low motion threshold after impact
+
+# =========================================================
+# Feature Thresholds (normalized values)
+# =========================================================
+thresholds:
+  height_drop_norm: 0.15    # 15% height reduction triggers
+  width_increase: 0.25      # 25% width increase indicates lying
+  dy_norm_peak: 0.08        # 8% of baseline_h per frame
+  dy_acc_thres: 0.03        # Acceleration threshold
+  dH_thres: 0.05            # Frame-to-frame height change
+  dW_thres: 0.05            # Frame-to-frame width change
+
+# =========================================================
+# Feature Weights for Scoring
+# =========================================================
+weights:
+  impact: 0.20              # Motion/impact features (reduced without IMU)
+  shape: 0.60               # BBox dynamics (primary for cam0)
+  pose: 0.20                # Keypoint-based features (unreliable in frontal view)
+
+# =========================================================
+# Paper-Aligned Features (KwolekKepski URFD methodology)
+# =========================================================
+paper_features:
+  hw_ratio_thres: 1.5         # Stricter to avoid ADL overlaps
+  height_ratio_thres: 0.57    # Dataset Midpoint
+  floor_distance_thres: 0.70  # Conservative pixel proxy
+  variance_window: 10         # Frames for variance computation
+  variance_thres: 0.04        # High variance = rapid movement
+  enable_pose_features: false # Disable unreliable pose features for cam0
+
+# =========================================================
+# Baseline Computation
+# =========================================================
+baseline_window: 30         # Frames for stable baseline (~1s at 30fps)
+stable_motion_thres: 2.0    # dy below this = stable frame
+
+# =========================================================
+# Legacy Thresholds (backward compatibility)
+# These are used by check_fall_candidate/check_lying_posture
+# =========================================================
+# Fall candidate detection
+angle_thres: 47.0           # Body angle for lying detection
+ar_thres: 1.08              # Aspect ratio threshold
+height_drop_thres: 0.13     # Legacy height drop
 height_drop_thres_strong: 0.23
 
-# Dynamic Fall Detection (relaxed for better recall)
-dy_fall_thres: 7.0
-dy_window: 5
+# Dynamic motion thresholds
+dy_fall_thres: 7.0          # Fast downward motion
+dy_window: 5                # Window for dy computation
 dy_short_window: 3
 dy_long_window: 10
-dy_peak_thres: 5.0
+dy_peak_thres: 5.0          # Peak velocity threshold
 
-# Border integrity check
+# Border integrity
 border_margin: 8
 
-# Impact verification (relaxed for slow falls)
+# Impact verification
 impact_dy_thres: 3.5
 
-# High-angle threshold (relaxed for better recall)
-high_angle_thres: 56.0 # Lowered from 57.0
+# High-angle threshold
+high_angle_thres: 56.0
 
-# Sustained lying threshold (new parameter for slow/controlled falls)
-sustained_lying_thres: 47.0 # Lowered from 48.0
+# Sustained lying
+sustained_lying_thres: 47.0
 
-# Height Drop Analysis
+# Height drop analysis
 height_drop_short_window: 5
 
-# Temporal Smoothing Parameters (balanced for precision-recall)
+# =========================================================
+# Temporal Smoothing
+# =========================================================
 cand_enter_frames: 2
 cand_tolerance: 2
-confirm_frames: 3 # Increased back to 3 for better precision
-confirm_tolerance: 1 # Lowered from 2 for stricter confirmation
+confirm_frames: 3
+confirm_tolerance: 1
 confirm_window: 14
 height_window: 16
 
-# Missing Detection Handling
+# Confirmation thresholds
+confirm_angle_thres: 42.0
+confirm_ar_thres: 1.25
+
+# Missing detection
 max_missing_streak: 5
 
-# Recovery Detection (balanced for false positive reduction)
-recovery_window: 13 # Increased from 12
-recovery_upright_angle_thres: 48.0 # Lowered from 50.0 (stricter upright check)
-recovery_ar_thres: 1.12 # Lowered from 1.15 (stricter upright check)
-recovery_height_recover_ratio: 0.72 # Lowered from 0.75 (slightly relaxed)
+# =========================================================
+# Recovery Detection
+# =========================================================
+recovery_window: 13
+recovery_upright_angle_thres: 48.0
+recovery_ar_thres: 1.12
+recovery_height_recover_ratio: 0.72
 
-# Motion Settling
+# Motion settling
 motion_settle_window: 8
-settle_dy_abs_thres: 8.0 # Lowered from 10.0
+settle_dy_abs_thres: 8.0
 
-# Slow Transition Gate (stricter to avoid false negatives)
-slow_lie_max_dy_peak: 15.0 # Lowered from 18.0 (more falls pass through)
+# Slow transition gate
+slow_lie_max_dy_peak: 15.0
 
+# =========================================================
 # Score Parameters
+# =========================================================
 score_decay: 0.85
 score_boost_candidate: 0.05
 score_boost_confirmed: 1.0
 
 # Minimum consecutive FALL_CONFIRMED frames
-min_confirm_duration_frames: 2
+min_confirm_duration_frames: 1
 
+# =========================================================
 # Output Settings
+# =========================================================
 output_fps: 25
 output_dir: 'outputs'
 
+# Debug mode - adds extra visualization
+debug_overlay: true
+
+# =========================================================
 # Reproducibility
+# =========================================================
 seed: 42

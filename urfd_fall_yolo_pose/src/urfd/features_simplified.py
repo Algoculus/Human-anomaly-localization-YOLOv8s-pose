@@ -36,9 +36,6 @@ class FrameFeatures:
     height_ratio: float = 1.0      # h/baseline_h (fallen state)
     floor_distance: float = 0.0    # cy/img_h (floor proximity)
     
-    # Depth Features
-    depth_mean: float = 0.0        # Mean depth in bbox (m)
-    
     # Temporal motion (optional, for variance)
     position_variance: float = 0.0
     
@@ -59,10 +56,8 @@ class FrameFeatures:
             'hw_ratio': self.hw_ratio,
             'height_ratio': self.height_ratio,
             'floor_distance': self.floor_distance,
-            'depth_mean': self.depth_mean,
             'position_variance': self.position_variance
         }
-
 
 
 class FeatureBuffer:
@@ -164,31 +159,34 @@ def compute_frame_features(
     feature_buffer: FeatureBuffer,
     track_id: int = -1,
     frame_idx: int = 0,
-    image_size: Optional[Tuple[int, int]] = None,
-    depth_map: Optional[np.ndarray] = None
+    image_size: Optional[Tuple[int, int]] = None
 ) -> FrameFeatures:
     """
-    Compute simplified bbox-based features + Depth.
+    Compute simplified bbox-based features.
     
     Args:
-        detection: YOLO detection dict etc...
-        depth_map: Optional depth map image (H, W) in meters
+        detection: YOLO detection dict with 'bbox', 'conf', 'keypoints'
+        config: Configuration dict
+        feature_buffer: FeatureBuffer for temporal analysis
+        track_id: Track ID
+        frame_idx: Frame index
+        image_size: (width, height) of image
+    
+    Returns:
+        FrameFeatures object
     """
     features = FrameFeatures(track_id=track_id, frame_idx=frame_idx)
     features.detection = detection
     
-    # ... BBox extraction same as before ...
-    if isinstance(detection, dict):
-        bbox = detection.get('bbox')
-    else:
-        bbox = getattr(detection, 'bbox', None)
-    
+    # Extract bbox
+    bbox = detection.get('bbox')
     if bbox is None or len(bbox) != 4:
         return features
     
     x1, y1, x2, y2 = bbox
     features.bbox = tuple(bbox)
     
+    # Compute bbox properties
     w = x2 - x1
     h = y2 - y1
     
@@ -204,41 +202,25 @@ def compute_frame_features(
     if image_size:
         img_w, img_h = image_size
     else:
-        # Estimate from bbox
+        # Estimate from bbox (assume person is in frame)
         img_w = max(x2 * 1.2, 640)
         img_h = max(y2 * 1.2, 480)
     
-    # Feature 1: HW Ratio
+    # Feature 1: HW Ratio (w/h)
     features.hw_ratio = w / h
     
-    # Feature 2: Height Ratio
+    # Feature 2: Height Ratio (h/baseline_h)
     baseline_h = feature_buffer.baseline_h()
     if baseline_h and baseline_h > 0:
         features.height_ratio = h / baseline_h
     else:
+        # Default: assume standing height is ~60% of image height
         estimated_baseline = img_h * 0.6
         features.height_ratio = h / estimated_baseline
     
-    # Feature 3: Floor Distance
+    # Feature 3: Floor Distance (cy/img_h)
+    # Higher value = closer to bottom = closer to floor
     features.floor_distance = features.center_y / img_h
-    
-    # Feature 4: Depth Mean (If depth map provided)
-    if depth_map is not None:
-        # Ensure coordinates are within image bounds
-        dx1, dy1 = int(max(0, x1)), int(max(0, y1))
-        dx2, dy2 = int(min(depth_map.shape[1], x2)), int(min(depth_map.shape[0], y2))
-        
-        if dx2 > dx1 and dy2 > dy1:
-            bbox_depth = depth_map[dy1:dy2, dx1:dx2]
-            # Use median to avoid outliers (0s or noise)
-            # Filter valid depths > 0
-            valid_depths = bbox_depth[bbox_depth > 0]
-            if len(valid_depths) > 0:
-                features.depth_mean = float(np.median(valid_depths))
-            else:
-                features.depth_mean = 0.0
-        else:
-            features.depth_mean = 0.0
     
     # Optional: Position Variance
     variance_window = config.get('paper_features', {}).get('variance_window', 10)
