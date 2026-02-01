@@ -15,8 +15,6 @@ from src.urfd.tracking import MultiPersonTracker
 from src.urfd.overlay import create_overlay_video
 from src.urfd.eval import compute_metrics, save_metrics, create_evaluation_plots, save_evaluation_summary
 from src.urfd.utils import load_config, set_seed, validate_config, get_depth_path_from_rgb, load_depth_map
-from src.urfd.paper_features import PaperFeaturesLoader
-from prepare_urfd import prepare_urfd
 
 
 def process_sequence(seq_info, detector, config, save_video=True):
@@ -235,8 +233,9 @@ def eval_all(root_dir, index_path, config_path, no_videos=False):
     # Load index
     index_path = Path(index_path)
     if not index_path.exists():
-        print(f"Index file {index_path} not found. Preparing dataset...")
-        prepare_urfd(root_dir, index_path)
+        print(f"Error: Index file {index_path} not found.")
+        print(f"Please ensure the index CSV exists at: {index_path}")
+        sys.exit(1)
     
     df_index = pd.read_csv(index_path)
     print(f"Loaded {len(df_index)} sequences from index")

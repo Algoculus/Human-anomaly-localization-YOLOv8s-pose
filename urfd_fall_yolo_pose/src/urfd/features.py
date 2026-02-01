@@ -241,7 +241,7 @@ def compute_frame_features(
             features.depth_mean = 0.0
     
     # Optional: Position Variance
-    variance_window = config.get('paper_features', {}).get('variance_window', 10)
+    variance_window = config.get('variance_window', 10)
     features.position_variance = feature_buffer.get_position_variance(variance_window)
     
     features.feature_valid = True

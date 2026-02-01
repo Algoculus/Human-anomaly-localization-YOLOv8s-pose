@@ -83,9 +83,6 @@ def validate_config(config):
     required_keys = [
         "yolo_model", "imgsz", "conf_thres", "iou_thres", "keypoint_conf_thres",
         "track_iou_thres", "track_center_dist_thres", "track_max_missing",
-        "angle_thres", "ar_thres", "confirm_angle_thres", "confirm_ar_thres",
-        "height_drop_thres", "height_drop_thres_strong",
-        "dy_fall_thres", "dy_window", "dy_peak_thres",
         "cand_enter_frames", "confirm_frames", "confirm_window", "height_window",
         "max_missing_streak", "recovery_window", "score_decay",
         "output_fps", "output_dir", "seed"
@@ -101,9 +98,6 @@ def validate_config(config):
     
     if not (0 < config["iou_thres"] <= 1.0):
         raise ValueError(f"iou_thres must be in (0, 1], got {config['iou_thres']}")
-    
-    if config["dy_window"] < 1:
-        raise ValueError(f"dy_window must be >= 1, got {config['dy_window']}")
     
     if config["cand_enter_frames"] < 1:
         raise ValueError(f"cand_enter_frames must be >= 1, got {config['cand_enter_frames']}")
@@ -131,10 +125,7 @@ def load_config(config_path):
     
     # Log key parameters for debugging
     print(f"Loaded config from {config_path}")
-    print(f"  dy_peak_thres: {config['dy_peak_thres']}")
-    print(f"  confirm_angle_thres: {config['confirm_angle_thres']}")
-    print(f"  confirm_ar_thres: {config['confirm_ar_thres']}")
-    print(f"  min_confirm_duration_frames: {config.get('min_confirm_duration_frames', 3)}")
+    print(f"  min_confirm_duration_frames: {config.get('min_confirm_duration_frames', 1)}")
     
     return config
 

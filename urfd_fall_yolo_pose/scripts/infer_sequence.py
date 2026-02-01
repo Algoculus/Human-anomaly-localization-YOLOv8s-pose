@@ -7,10 +7,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.urfd.dataset import load_sequence_frames
 from src.urfd.yolo_pose import YOLOPoseDetector
-from src.urfd.features import compute_frame_features
+from src.urfd.features import compute_frame_features, FeatureBuffer
 from src.urfd.smoothing import FallStateMachine
-from src.urfd.tracking import PrimaryPersonTracker
-from src.urfd.fallback_tracker import FallbackTracker
+from src.urfd.tracking import MultiPersonTracker
 from src.urfd.overlay import create_overlay_video
 from src.urfd.utils import load_config, set_seed
 
@@ -48,90 +47,105 @@ def infer_sequence(seq_path, config_path):
         clahe_grid=config.get("clahe_grid", 8)
     )
     
-    tracker = PrimaryPersonTracker(config)
-    fallback_tracker = FallbackTracker(
-        tracker_type=config.get("fallback_tracker_type", "kcf"),
-        max_gap=config.get("fallback_track_max_gap", 6)
-    )
-    
-    state_machine = FallStateMachine(config)
-    
-    all_features = []
-    all_states = []
+    tracker = MultiPersonTracker(config)
+    state_machines = {}
+    feature_buffers = {}
+    all_tracks_data = []
     all_scores = []
-    primary_indices = []
+    
+    image_size = (frames[0].shape[1], frames[0].shape[0]) if len(frames) > 0 else None
     
     for idx, frame in enumerate(frames):
         detections = detector.detect(frame)
+        matches = tracker.update(detections, config["keypoint_conf_thres"], idx)
         
-        fallback_det = fallback_tracker.update(frame, detections)
-        if fallback_det is not None:
-            detections = [fallback_det]
+        frame_track_data = {}
+        frame_max_score = 0.0
         
-        if len(detections) > 0 and fallback_det is None:
-            if tracker.track_state is not None and tracker.track_state["bbox"] is not None:
-                fallback_tracker.initialize(frame, tracker.track_state["bbox"])
+        for tid in list(tracker.tracks.keys()):
+            det = detections[matches[tid]] if tid in matches else None
+            
+            if tid not in state_machines:
+                state_machines[tid] = FallStateMachine(config)
+                feature_buffers[tid] = FeatureBuffer(
+                    max_size=config.get("baseline_window", 30) * 2,
+                    stable_motion_thres=config.get("stable_motion_thres", 2.0)
+                )
+            
+            features = compute_frame_features(
+                det,
+                config,
+                feature_buffers[tid],
+                track_id=tid,
+                frame_idx=idx,
+                image_size=image_size
+            )
+            feature_buffers[tid].add(features)
+            decision = state_machines[tid].update_v2(features, track_id=tid, frame_idx=idx)
+            
+            frame_max_score = max(frame_max_score, decision.confidence)
+            
+            frame_track_data[tid] = {
+                \"bbox\": features.bbox,
+                \"keypoints\": det[\"keypoints\"] if det else None,
+                \"state\": decision.fsm_state,
+                \"score\": decision.confidence,
+                \"label\": decision.label,
+                \"top_features\": decision.top_features,
+                \"features\": features
+            }
         
-        image_size = (frames[0].shape[1], frames[0].shape[0]) if len(frames) > 0 else None
-        features = compute_frame_features(
-            detections,
-            config["keypoint_conf_thres"],
-            config["dy_window"],
-            all_features,
-            tracker=tracker,
-            frame_idx=idx,
-            image_size=image_size
-        )
-        
-        all_features.append(features)
-        primary_indices.append(features["primary_person_idx"])
-        
-        state, score = state_machine.update(features)
-        all_states.append(state)
-        all_scores.append(score)
+        all_tracks_data.append(frame_track_data)
+        all_scores.append(frame_max_score)
     
-    fall_confirmed = any(s == "FALL_CONFIRMED" for s in all_states)
-    
-    if fall_confirmed:
-        max_consecutive_confirmed = 0
+    # Determine sequence-level prediction
+    fall_confirmed = False
+    for tid, sm in state_machines.items():
+        track_states = [
+            frame_data.get(tid, {}).get(\"state\", \"NONE\")
+            for frame_data in all_tracks_data
+        ]
+        max_consecutive = 0
         current_consecutive = 0
-        for s in all_states:
-            if s == "FALL_CONFIRMED":
+        for s in track_states:
+            if \"FALL\" in s:
                 current_consecutive += 1
-                max_consecutive_confirmed = max(max_consecutive_confirmed, current_consecutive)
+                max_consecutive = max(max_consecutive, current_consecutive)
             else:
                 current_consecutive = 0
-        
-        min_confirm_duration = config.get("min_confirm_duration_frames", 3)
-        fall_confirmed = max_consecutive_confirmed >= min_confirm_duration
+        min_confirm_duration = config.get(\"min_confirm_duration_frames\", 3)
+        if max_consecutive >= min_confirm_duration:
+            fall_confirmed = True
+            break
     
     pred_label = 1 if fall_confirmed else 0
     first_confirm_frame = -1
     if fall_confirmed:
-        first_confirm_frame = next(i for i, s in enumerate(all_states) if s == "FALL_CONFIRMED")
+        for i, frame_data in enumerate(all_tracks_data):
+            if any(\"FALL\" in t.get(\"state\", \"\") for t in frame_data.values()):
+                first_confirm_frame = i
+                break
     
     max_score = max(all_scores) if all_scores else 0.0
     
-    print(f"Prediction: {pred_label} (Fall={fall_confirmed})")
-    print(f"First confirm frame: {first_confirm_frame}")
-    print(f"Max score: {max_score:.3f}")
+    print(f\"Prediction: {pred_label} (Fall={fall_confirmed})\")
+    print(f\"First confirm frame: {first_confirm_frame}\")
+    print(f\"Max score: {max_score:.3f}\")
     
-    output_dir = Path(config["output_dir"])
+    output_dir = Path(config[\"output_dir\"])
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / f"{seq_name}_overlay.mp4"
+    output_path = output_dir / f\"{seq_name}_overlay.mp4\"
     
-    print(f"Creating overlay video: {output_path}")
+    print(f\"Creating overlay video: {output_path}\")
     create_overlay_video(
         frames,
-        [f["detections"] for f in all_features],
-        all_states,
-        all_scores,
+        all_tracks_data,
         output_path,
-        config["output_fps"],
-        primary_indices=primary_indices
+        config[\"output_fps\"],
+        debug_mode=config.get(\"debug_overlay\", True)
     )
     
-    print(f"Done! Video saved to {output_path}")
+    print(f\"Done! Video saved to {output_path}\")
 
 def main():
     parser = argparse.ArgumentParser(description="Run inference on a single URFD sequence")
