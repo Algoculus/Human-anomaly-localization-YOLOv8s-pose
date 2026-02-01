@@ -283,8 +283,14 @@ class FallStateMachine:
             height_drop,
             self.config["height_drop_thres"],
             self.config["dy_fall_thres"],
-            self.config.get("impact_dy_thres", 10.0)
+            self.config.get("impact_dy_thres", 10.0),
+            self.config.get("high_angle_thres", 65.0),
+            self.config.get("high_angle_dy_peak_thres", 8.0),
+            self.config.get("min_candidate_dy_peak", 12.0)
         )
+        
+        # Check for slow transition (controlled lying down, not a fall)
+        is_slow_transition = self._check_slow_transition(features)
         
         # Check lying posture (relaxed thresholds for confirmation)
         is_lying = check_lying_posture(
@@ -336,6 +342,21 @@ class FallStateMachine:
                 height_drop_strong = self.config.get("height_drop_thres_strong", 0.3)
                 height_drop_moderate = 0.22
                 
+                # =========================================================
+                # MINIMUM IMPACT REQUIREMENT (CRITICAL FOR FALSE POSITIVE REDUCTION)
+                # ALL paths require minimum dy_peak to confirm fall
+                # This distinguishes actual falls from controlled lying down
+                # =========================================================
+                min_dy_peak_for_fall = self.config.get("min_dy_peak_for_fall", 15.0)
+                
+                # Check max dy_peak across entire dy_peak_history (not just current frame)
+                max_dy_peak_observed = dy_peak
+                if len(self.dy_peak_history) > 0:
+                    max_dy_peak_observed = max(max(self.dy_peak_history), dy_peak)
+                
+                # If no significant impact was ever observed, cannot confirm fall
+                has_sufficient_impact = max_dy_peak_observed >= min_dy_peak_for_fall
+                
                 # Relax dy threshold when height drop is present
                 effective_dy_thres = dy_peak_thres
                 if height_drop >= height_drop_moderate:
@@ -344,15 +365,26 @@ class FallStateMachine:
                 # PATH 1: Fast motion with impact
                 fast_motion = dy_peak >= effective_dy_thres
                 
-                # PATH 2: Strong height drop + sustained lying
+                # PATH 2: Strong height drop + sustained lying + MUST have impact
                 strong_height = (height_drop >= height_drop_strong and 
-                                lying_count >= self.config["confirm_frames"])
+                                lying_count >= self.config["confirm_frames"] and
+                                has_sufficient_impact)
                 
-                # PATH 3: Moderate height drop + very sustained lying
+                # PATH 3: Moderate height drop + very sustained lying + MUST have impact
                 moderate_height = (height_drop >= height_drop_moderate and 
-                                  lying_count >= self.config["confirm_frames"] + 3)
+                                  lying_count >= self.config["confirm_frames"] + 3 and
+                                  has_sufficient_impact)
                 
                 can_confirm = fast_motion or strong_height or moderate_height
+                
+                # =========================================================
+                # SLOW TRANSITION GATE (FINAL SAFETY CHECK)
+                # Block confirmation if person laid down slowly (not a fall)
+                # This prevents false positives when someone lies down normally
+                # =========================================================
+                if is_slow_transition:
+                    # Slow controlled transition - not a fall
+                    can_confirm = False
                 
                 if can_confirm:
                     self.state = "FALL_CONFIRMED"
