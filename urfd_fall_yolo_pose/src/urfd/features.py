@@ -14,6 +14,11 @@ def compute_frame_features(detection, keypoint_conf_thres, dy_window, history,
     """
     Compute features for a single track/detection.
     
+    IMPROVED FEATURES (v2):
+    - Bbox-based features (robust, no keypoint dependency)
+    - Temporal velocity/acceleration features
+    - Shape dynamics (aspect ratio changes)
+    
     Args:
         detection: Standard detection dict with keys 'bbox', 'keypoints', etc.
         keypoint_conf_thres: Minimum confidence threshold for keypoints
@@ -25,10 +30,9 @@ def compute_frame_features(detection, keypoint_conf_thres, dy_window, history,
         
     Returns:
         features: Dict containing computed features including:
-            - track_id, bbox, center_y, height, width
-            - bbox_aspect_ratio, body_angle_deg
-            - dy, dy_velocity, dy_peak
-            - feature_valid, is_touching_border
+            - Bbox-based: hw_ratio, bbox_aspect_ratio, area
+            - Temporal: dy, dh, d_ar, d2y (acceleration)
+            - Legacy: body_angle_deg (kept for compatibility)
     """
     # Initialize default feature values
     features = {
@@ -37,12 +41,19 @@ def compute_frame_features(detection, keypoint_conf_thres, dy_window, history,
         "center_y": None,
         "height": None,
         "width": None,
+        "area": None,  # NEW
         "bbox_aspect_ratio": None,
+        "hw_ratio": None,  # NEW: explicit W/H ratio
         "shoulder_mid": None,
         "hip_mid": None,
         "body_angle_deg": None,
         "feature_valid": False,
+        # Temporal features (NEW)
         "dy": 0.0,
+        "dh": 0.0,  # NEW: height change rate
+        "dw": 0.0,  # NEW: width change rate  
+        "d_ar": 0.0,  # NEW: aspect ratio change rate
+        "d2y": 0.0,  # NEW: vertical acceleration
         "dy_velocity": 0.0,
         "dy_peak": 0.0,
         "is_touching_border": False,
@@ -68,8 +79,12 @@ def compute_frame_features(detection, keypoint_conf_thres, dy_window, history,
     features["center_y"] = cy
     features["height"] = h
     features["width"] = w
+    features["area"] = w * h  # NEW: bbox area
+
     # Aspect ratio: W/H > 1 means lying down posture
-    features["bbox_aspect_ratio"] = w / h if h > 0 else 0.0
+    ar = w / h if h > 0 else 0.0
+    features["bbox_aspect_ratio"] = ar
+    features["hw_ratio"] = ar  # Alias for clarity
     
     # =========================================================
     # BORDER INTEGRITY CHECK
@@ -133,6 +148,89 @@ def compute_frame_features(detection, keypoint_conf_thres, dy_window, history,
             features["feature_valid"] = True
         else:
             features["body_angle_deg"] = None
+            features["feature_valid"] = False
+    
+    # =========================================================
+    # TEMPORAL FEATURES - BBOX DYNAMICS (NEW)
+    # More robust than keypoint-based angle for fall detection
+    # =========================================================
+    if len(history) >= 1:
+        prev_feat = history[-1]
+        prev_cy = prev_feat.get("center_y")
+        prev_h = prev_feat.get("height")
+        prev_w = prev_feat.get("width")
+        prev_ar = prev_feat.get("bbox_aspect_ratio")
+        prev_dy = prev_feat.get("dy", 0.0)
+        
+        if prev_cy is not None and cy is not None:
+            # Instantaneous velocity: frame-to-frame change in center_y
+            dy_inst = cy - prev_cy
+            features["dy"] = dy_inst
+            
+            # NEW: Vertical acceleration (d2y) - detects free fall
+            if prev_dy != 0.0:
+                features["d2y"] = dy_inst - prev_dy
+            
+            # Collect dy samples from recent history for peak detection
+            dy_inst_samples = []
+            for i in range(1, min(dy_window + 1, len(history) + 1)):
+                idx = -i
+                if abs(idx) <= len(history):
+                    hist_feat = history[idx]
+                    if hist_feat.get("dy", 0.0) != 0.0:
+                        dy_inst_samples.append(abs(hist_feat["dy"]))
+            
+            # Include current frame's velocity
+            dy_inst_samples.append(abs(dy_inst))
+            
+            if len(dy_inst_samples) > 0:
+                # dy_peak: maximum velocity in window (detects impact moment)
+                features["dy_peak"] = max(dy_inst_samples)
+                # dy_velocity: average velocity in window
+                features["dy_velocity"] = np.mean(dy_inst_samples)
+                
+        # NEW: Height change rate (dh) - detects collapsing
+        if prev_h is not None and prev_h > 0:
+            features["dh"] = h - prev_h
+            
+        # NEW: Width change rate (dw) - detects horizontal expansion
+        if prev_w is not None and prev_w > 0:
+            features["dw"] = w - prev_w
+            
+        # NEW: Aspect ratio change rate (d_ar) - detects posture transition
+        if prev_ar is not None and prev_ar > 0:
+            features["d_ar"] = ar - prev_ar
+            
+        # NEW: Aspect ratio change rate (d_ar) - detects posture transition
+        if prev_ar is not None and prev_ar > 0:
+            features["d_ar"] = ar - prev_ar
+            
+            # Collect dy samples from recent history for peak detection
+            dy_inst_samples = []
+            for i in range(1, min(dy_window + 1, len(history) + 1)):
+                idx = -i
+                if abs(idx) <= len(history):
+                    hist_feat = history[idx]
+                    if hist_feat.get("dy", 0.0) != 0.0:
+                        dy_inst_samples.append(abs(hist_feat["dy"]))
+            
+            # Include current frame's velocity
+            dy_inst_samples.append(abs(dy_inst))
+            
+            if len(dy_inst_samples) > 0:
+                # dy_peak: maximum velocity in window (detects impact moment)
+                features["dy_peak"] = max(dy_inst_samples)
+                # dy_velocity: average velocity in window
+                features["dy_velocity"] = np.mean(dy_inst_samples)
+    
+    # Fallback for first frame or missing center_y
+    if len(history) >= dy_window and features["dy"] == 0.0:
+        prev_feat_win = history[-dy_window]
+        if prev_feat_win["center_y"] is not None and cy is not None:
+            features["dy"] = cy - prev_feat_win["center_y"]
+    
+    # =========================================================
+    # VERTICAL VELOCITY (dy) COMPUTATION - LEGACY None
             features["feature_valid"] = False
     
     # =========================================================
