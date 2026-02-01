@@ -1,5 +1,5 @@
 # YOLOv8 Pose Model Configuration
-yolo_model: "yolov8s-pose.pt"
+yolo_model: 'yolov8s-pose.pt'
 imgsz: 640
 conf_thres: 0.25
 iou_thres: 0.45
@@ -18,12 +18,12 @@ track_max_missing: 8
 
 # Fallback tracking
 fallback_track_max_gap: 6
-fallback_tracker_type: "kcf"
+fallback_tracker_type: 'kcf'
 
 # Fall Detection Rule Thresholds
 angle_thres: 55.0
 ar_thres: 1.15
-confirm_angle_thres: 48.0 
+confirm_angle_thres: 48.0
 confirm_ar_thres: 1.35
 height_drop_thres: 0.18
 height_drop_thres_strong: 0.28
@@ -31,15 +31,15 @@ height_drop_thres_strong: 0.28
 # Dynamic Fall Detection
 dy_fall_thres: 10.0
 dy_window: 5
-dy_short_window: 3 
-dy_long_window: 10 
-dy_peak_thres: 8.0
+dy_short_window: 3
+dy_long_window: 10
+dy_peak_thres: 6.0 # BALANCED for 28/30 falls
 
 # Border integrity check
 border_margin: 8
 
 # Impact verification for static posture path (lowered for better recall)
-impact_dy_thres: 5.0
+impact_dy_thres: 3.5 # BALANCED for 28/30 falls
 
 # High-angle threshold (new: very horizontal = likely fall)
 high_angle_thres: 65.0
@@ -50,7 +50,7 @@ height_drop_short_window: 5
 # Temporal Smoothing Parameters
 cand_enter_frames: 2
 cand_tolerance: 1
-confirm_frames: 3
+confirm_frames: 2 # BALANCED: 1→2 for better precision
 confirm_tolerance: 2
 confirm_window: 10
 height_window: 12
@@ -59,10 +59,10 @@ height_window: 12
 max_missing_streak: 5
 
 # Recovery Detection
-recovery_window: 10
+recovery_window: 15 # INCREASED: 10→15 to prevent premature reset
 recovery_upright_angle_thres: 55.0
 recovery_ar_thres: 1.25
-recovery_height_recover_ratio: 0.70
+recovery_height_recover_ratio: 0.75 # INCREASED: 0.70→0.75 (more strict)
 
 # Motion Settling
 motion_settle_window: 8
@@ -81,7 +81,7 @@ min_confirm_duration_frames: 2
 
 # Output Settings
 output_fps: 25
-output_dir: "outputs"
+output_dir: 'outputs'
 
 # Reproducibility
 seed: 42

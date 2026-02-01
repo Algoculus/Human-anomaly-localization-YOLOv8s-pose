@@ -200,67 +200,6 @@ def compute_frame_features(detection, keypoint_conf_thres, dy_window, history,
         # NEW: Aspect ratio change rate (d_ar) - detects posture transition
         if prev_ar is not None and prev_ar > 0:
             features["d_ar"] = ar - prev_ar
-            
-        # NEW: Aspect ratio change rate (d_ar) - detects posture transition
-        if prev_ar is not None and prev_ar > 0:
-            features["d_ar"] = ar - prev_ar
-            
-            # Collect dy samples from recent history for peak detection
-            dy_inst_samples = []
-            for i in range(1, min(dy_window + 1, len(history) + 1)):
-                idx = -i
-                if abs(idx) <= len(history):
-                    hist_feat = history[idx]
-                    if hist_feat.get("dy", 0.0) != 0.0:
-                        dy_inst_samples.append(abs(hist_feat["dy"]))
-            
-            # Include current frame's velocity
-            dy_inst_samples.append(abs(dy_inst))
-            
-            if len(dy_inst_samples) > 0:
-                # dy_peak: maximum velocity in window (detects impact moment)
-                features["dy_peak"] = max(dy_inst_samples)
-                # dy_velocity: average velocity in window
-                features["dy_velocity"] = np.mean(dy_inst_samples)
-    
-    # Fallback for first frame or missing center_y
-    if len(history) >= dy_window and features["dy"] == 0.0:
-        prev_feat_win = history[-dy_window]
-        if prev_feat_win["center_y"] is not None and cy is not None:
-            features["dy"] = cy - prev_feat_win["center_y"]
-    
-    # =========================================================
-    # VERTICAL VELOCITY (dy) COMPUTATION - LEGACY None
-            features["feature_valid"] = False
-    
-    # =========================================================
-    # VERTICAL VELOCITY (dy) COMPUTATION
-    # Critical for detecting rapid downward movement during falls
-    # =========================================================
-    if len(history) >= 1:
-        prev_feat = history[-1]
-        if prev_feat["center_y"] is not None and cy is not None:
-            # Instantaneous velocity: frame-to-frame change in center_y
-            dy_inst = cy - prev_feat["center_y"]
-            features["dy"] = dy_inst
-            
-            # Collect dy samples from recent history for peak detection
-            dy_inst_samples = []
-            for i in range(1, min(dy_window + 1, len(history) + 1)):
-                idx = -i
-                if abs(idx) <= len(history):
-                    hist_feat = history[idx]
-                    if hist_feat.get("dy", 0.0) != 0.0:
-                        dy_inst_samples.append(abs(hist_feat["dy"]))
-            
-            # Include current frame's velocity
-            dy_inst_samples.append(abs(dy_inst))
-            
-            if len(dy_inst_samples) > 0:
-                # dy_peak: maximum velocity in window (detects impact moment)
-                features["dy_peak"] = max(dy_inst_samples)
-                # dy_velocity: average velocity in window
-                features["dy_velocity"] = np.mean(dy_inst_samples)
     
     # Fallback for first frame or missing center_y
     if len(history) >= dy_window and features["dy"] == 0.0:

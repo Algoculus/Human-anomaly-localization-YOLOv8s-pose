@@ -199,13 +199,16 @@ class FallStateMachine:
         
         # Different recovery criteria based on current state
         if self.state == "FALL_CONFIRMED":
-            # Quick recovery: 3-4 consecutive upright frames
-            if len(self.recovery_history) >= 4:
-                recent_upright = self.recovery_history[-4:]
-                if sum(recent_upright) >= 3 and height_recovered:
+            # Require sustained recovery: 6-8 consecutive upright frames
+            # INCREASED: 4→8 to prevent premature reset on falls
+            if len(self.recovery_history) >= 8:
+                recent_upright = self.recovery_history[-8:]
+                # Need at least 6 out of 8 frames upright
+                if sum(recent_upright) >= 6 and height_recovered:
                     return True
         else:
             # Standard recovery for CANDIDATE state
+            # More sensitive since not yet confirmed
             if len(self.recovery_history) >= recovery_window // 2:
                 upright_count = sum(self.recovery_history[-recovery_window // 2:])
                 if upright_count >= recovery_window // 3 and height_recovered:
@@ -352,7 +355,40 @@ class FallStateMachine:
                 moderate_height = (height_drop >= height_drop_moderate and 
                                   lying_count >= self.config["confirm_frames"] + 3)
                 
-                can_confirm = fast_motion or strong_height or moderate_height
+                # ADAPTIVE FSM VALIDATION (Relaxed for better recall)
+                # But block clear ADL cases
+                angle = features.get("body_angle_deg")
+                feature_valid = features.get("feature_valid", False)
+                hw_ratio = features.get("hw_ratio", 0.0)
+                
+                angle_blocks = False  # Only block if VERY clear ADL
+                
+                if feature_valid and angle is not None:
+                    # STRENGTHENED: Block more ADL false positives
+                    if hw_ratio >= 1.0 and angle < 40:
+                        angle_blocks = True
+                    elif hw_ratio >= 0.95 and angle < 38:
+                        angle_blocks = True
+                    elif hw_ratio >= 1.1 and angle < 43:
+                        angle_blocks = True
+                
+                if angle_blocks:
+                    can_confirm = False
+                else:
+                    # TARGETED FP REDUCTION: Check for sustained transition
+                    # ADL cases (sitting, yoga) often have gradual lying without impact
+                    motion_paths = sum([fast_motion, strong_height, moderate_height])
+                    
+                    # If angle confirms lying (>= 50°), only need 1 motion path
+                    if feature_valid and angle is not None and angle >= 50:
+                        can_confirm = motion_paths >= 1
+                    # If no angle OR weak lying evidence, require strong motion
+                    elif lying_count >= self.config["confirm_frames"] + 2:
+                        # Very sustained lying → need at least 1 strong motion indicator
+                        can_confirm = (fast_motion or strong_height)
+                    else:
+                        # Quick lying transition → more likely fall, need any motion
+                        can_confirm = motion_paths >= 1
                 
                 if can_confirm:
                     self.state = "FALL_CONFIRMED"
