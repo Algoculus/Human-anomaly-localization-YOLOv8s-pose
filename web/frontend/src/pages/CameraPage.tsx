@@ -1,17 +1,18 @@
-import { useState, useRef, useEffect } from "react";
-import { Video, Play, Pause, Activity, Wifi } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { useToast } from "@/components/ui/use-toast";
-import Layout from "@/components/Layout";
+import { useState, useRef, useEffect } from 'react';
+import { Video, Play, Pause, Activity, Wifi } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { useToast } from '@/components/ui/use-toast';
+import Layout from '@/components/Layout';
 
 interface TrackData {
   id: number;
   state: string;
   score: number;
+  label?: string; // FALL, NORMAL, UNCERTAIN
   bbox: number[] | null;
   keypoints: number[][] | null;
 }
@@ -23,7 +24,7 @@ interface Telemetry {
   latency?: number;
 }
 
-const FIXED_ROOM_ID = "fall-detection-room";
+const FIXED_ROOM_ID = 'fall-detection-room';
 
 export default function CameraPage() {
   const { toast } = useToast();
@@ -36,7 +37,7 @@ export default function CameraPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const captureCanvasRef = useRef<HTMLCanvasElement>(
-    document.createElement("canvas"),
+    document.createElement('canvas'),
   );
   const streamIntervalRef = useRef<number | null>(null);
   const frameCountRef = useRef(0);
@@ -86,18 +87,18 @@ export default function CameraPage() {
       const ws = new WebSocket(`ws://localhost:4611/ws`);
 
       ws.onopen = () => {
-        console.log("WebSocket connected");
+        console.log('WebSocket connected');
 
         toast({
-          title: "Connected",
-          description: "WebSocket connected successfully",
+          title: 'Connected',
+          description: 'WebSocket connected successfully',
         });
 
         // Register as camera
         ws.send(
           JSON.stringify({
-            type: "register",
-            role: "camera",
+            type: 'register',
+            role: 'camera',
             roomId: FIXED_ROOM_ID,
             deviceId: deviceId,
           }),
@@ -115,48 +116,48 @@ export default function CameraPage() {
         const data = JSON.parse(event.data);
         // console.log('Received:', data)
 
-        if (data.type === "telemetry") {
+        if (data.type === 'telemetry') {
           latestTelemetryRef.current = data;
           setTelemetry(data);
 
           if (data.alarm) {
             toast({
-              title: "FALL DETECTED!",
-              description: "Alarm triggered.",
-              variant: "destructive",
+              title: 'FALL DETECTED!',
+              description: 'Alarm triggered.',
+              variant: 'destructive',
             });
           }
-        } else if (data.type === "error") {
-          console.error("WebSocket error:", data.message);
+        } else if (data.type === 'error') {
+          console.error('WebSocket error:', data.message);
           toast({
-            title: "Error",
+            title: 'Error',
             description: data.message,
-            variant: "destructive",
+            variant: 'destructive',
           });
         }
       };
 
       ws.onerror = (error) => {
-        console.error("WebSocket error:", error);
+        console.error('WebSocket error:', error);
         toast({
-          title: "Connection Error",
-          description: "Failed to connect to server",
-          variant: "destructive",
+          title: 'Connection Error',
+          description: 'Failed to connect to server',
+          variant: 'destructive',
         });
       };
 
       ws.onclose = () => {
-        console.log("WebSocket closed");
+        console.log('WebSocket closed');
         setIsStreaming(false);
       };
 
       wsRef.current = ws;
     } catch (error) {
-      console.error("Failed to start streaming:", error);
+      console.error('Failed to start streaming:', error);
       toast({
-        title: "Camera Error",
-        description: "Failed to access webcam",
-        variant: "destructive",
+        title: 'Camera Error',
+        description: 'Failed to access webcam',
+        variant: 'destructive',
       });
     }
   };
@@ -187,7 +188,7 @@ export default function CameraPage() {
 
     const video = videoRef.current;
     const canvas = captureCanvasRef.current;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext('2d');
 
     if (!ctx) return;
 
@@ -203,10 +204,10 @@ export default function CameraPage() {
 
         const reader = new FileReader();
         reader.onloadend = () => {
-          const base64 = (reader.result as string).split(",")[1];
+          const base64 = (reader.result as string).split(',')[1];
 
           const frameMsg = {
-            type: "frame",
+            type: 'frame',
             roomId: FIXED_ROOM_ID,
             frameId: frameCountRef.current,
             ts: Date.now(),
@@ -219,7 +220,7 @@ export default function CameraPage() {
         };
         reader.readAsDataURL(blob);
       },
-      "image/jpeg",
+      'image/jpeg',
       0.8,
     );
   };
@@ -255,7 +256,7 @@ export default function CameraPage() {
 
     const canvas = canvasRef.current;
     const video = videoRef.current;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     // Match display size
@@ -279,17 +280,16 @@ export default function CameraPage() {
 
     // Draw all tracks
     data.tracks.forEach((track) => {
-      // Color based on state matches backend (overlay.py)
-      let color = "rgb(0, 255, 0)"; // NORMAL - Green
-      if (track.state === "FALL" || track.state === "FALL_CONFIRMED") {
-        color = "rgb(0, 0, 255)"; // FALL - Red (BGR in python is (0,0,255) -> usually rendered as Red in easy tools, but let's stick to standard web Red)
-        // Wait, backend overlay.py says: COLOR_FALL = (0, 0, 255). OpenCV uses BGR. So (0,0,255) is RED in BGR.
-        // In web (RGB), Red is (255, 0, 0).
-        color = "rgb(255, 0, 0)";
-      } else if (track.state === "CANDIDATE") {
-        // Backend: COLOR_CANDIDATE = (0, 165, 255) -> Orange/Gold in BGR?
-        // Let's use a nice Orange for web
-        color = "rgb(255, 165, 0)";
+      // Color based on state - handles all backend states
+      let color = 'rgb(0, 255, 0)'; // NORMAL - Green
+      if (track.state === 'FALL' || track.state === 'FALL_CONFIRMED') {
+        color = 'rgb(255, 0, 0)'; // Red for fall
+      } else if (
+        track.state === 'CANDIDATE' ||
+        track.state === 'HYPOTHESIS' ||
+        track.state === 'VERIFYING'
+      ) {
+        color = 'rgb(255, 165, 0)'; // Orange for candidate/uncertain
       }
 
       // Draw Keypoints and Skeleton
@@ -348,7 +348,7 @@ export default function CameraPage() {
       const labelHeight = 22;
       const labelText = `ID:${track.id} ${track.state} ${track.score.toFixed(2)}`;
 
-      ctx.font = "bold 14px sans-serif";
+      ctx.font = 'bold 14px sans-serif';
       const textMetrics = ctx.measureText(labelText);
       const labelWidth = textMetrics.width + 10;
 
@@ -363,12 +363,12 @@ export default function CameraPage() {
       ctx.save();
       ctx.translate(x + labelWidth / 2, y - labelHeight / 2); // center of label
       ctx.scale(-1, 1); // flip back
-      ctx.fillStyle = "#ffffff";
-      if (color === "rgb(0, 255, 0)" || color === "#22c55e") {
-        ctx.fillStyle = "#000000"; // Black text on green
+      ctx.fillStyle = '#ffffff';
+      if (color === 'rgb(0, 255, 0)' || color === '#22c55e') {
+        ctx.fillStyle = '#000000'; // Black text on green
       }
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
       ctx.fillText(labelText, 0, 0);
       ctx.restore();
     });
@@ -378,17 +378,19 @@ export default function CameraPage() {
 
   const getStateColor = (state: string) => {
     switch (state) {
-      case "FALL":
-      case "FALL_CONFIRMED":
-        return "destructive";
-      case "CANDIDATE":
-      case "FALL_CANDIDATE":
-        return "warning";
-      case "NORMAL":
-      case "STANDING":
-        return "success";
+      case 'FALL':
+      case 'FALL_CONFIRMED':
+        return 'destructive';
+      case 'CANDIDATE':
+      case 'FALL_CANDIDATE':
+      case 'HYPOTHESIS':
+      case 'VERIFYING':
+        return 'warning';
+      case 'NORMAL':
+      case 'STANDING':
+        return 'success';
       default:
-        return "default";
+        return 'default';
     }
   };
 
@@ -398,9 +400,15 @@ export default function CameraPage() {
       return null;
     // Priority: FALL > CANDIDATE > NORMAL, then score
     return telemetry.tracks.reduce((prev, current) => {
-      if (current.state === "FALL_CONFIRMED") return current;
-      if (prev.state === "FALL_CONFIRMED") return prev;
-      if (current.state === "CANDIDATE" && prev.state !== "FALL_CONFIRMED")
+      const fallStates = ['FALL', 'FALL_CONFIRMED'];
+      const candidateStates = ['CANDIDATE', 'HYPOTHESIS', 'VERIFYING'];
+
+      if (fallStates.includes(current.state)) return current;
+      if (fallStates.includes(prev.state)) return prev;
+      if (
+        candidateStates.includes(current.state) &&
+        !fallStates.includes(prev.state)
+      )
         return current;
       if (current.score > prev.score) return current;
       return prev;
@@ -459,7 +467,7 @@ export default function CameraPage() {
                 <video
                   ref={videoRef}
                   className="w-full h-full object-cover"
-                  style={{ transform: "scaleX(-1)" }} // Mirror video
+                  style={{ transform: 'scaleX(-1)' }} // Mirror video
                   muted
                 />
                 <canvas

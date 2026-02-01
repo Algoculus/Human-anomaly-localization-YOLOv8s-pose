@@ -63,8 +63,6 @@ class FrameFeatures:
             'position_variance': self.position_variance
         }
 
-
-
 class FeatureBuffer:
     """Simplified buffer for baseline and variance computation."""
     

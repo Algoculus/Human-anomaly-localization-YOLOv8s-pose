@@ -175,35 +175,50 @@ class FallStateMachine:
         return np.clip(drop, 0.0, 1.0)
     
     def _check_recovery(self, features: Dict) -> bool:
-        """Check if person has recovered (standing up)."""
+        """Check if person has recovered (standing up).
+        
+        Improved for realtime: faster recovery detection when person stands up.
+        """
         # Check upright via keypoints
         is_upright_kp = False
         if features.get("body_angle_deg") is not None:
             is_upright_kp = features["body_angle_deg"] < self.recovery_upright_angle
         
-        # Check upright via bbox AR
+        # Check upright via bbox AR (wider threshold for realtime)
         ar = features.get("bbox_aspect_ratio", 1.5)
-        is_upright_ar = ar < self.recovery_ar
+        hw_ratio = features.get("hw_ratio", 0.5)
         
-        is_upright = is_upright_kp or is_upright_ar
+        # AR < 1.2 means height > width (standing/upright)
+        is_upright_ar = ar < 1.2
+        
+        # hw_ratio < 0.7 also indicates upright (width < 70% of height)
+        is_upright_hw = hw_ratio < 0.7
+        
+        is_upright = is_upright_kp or is_upright_ar or is_upright_hw
         
         # Track recovery history
         self.recovery_history.append(1 if is_upright else 0)
         if len(self.recovery_history) > self.recovery_window:
             self.recovery_history.pop(0)
         
-        # Check height recovery
-        height_recovered = False
-        if len(self.height_history) >= self.recovery_window:
-            recent_max = max(self.height_history[-self.recovery_window:])
-            baseline = np.median(self.height_history[:min(30, len(self.height_history))])
-            if baseline > 0:
-                height_recovered = (recent_max / baseline) > 0.7
+        # Fast recovery: if current frame is strongly upright (AR < 0.9), reset immediately
+        if ar < 0.9 and hw_ratio < 0.55:
+            return True
         
-        # Need consistent upright frames
-        if len(self.recovery_history) >= 4:
-            recent_upright = sum(self.recovery_history[-4:])
-            if recent_upright >= 3 and height_recovered:
+        # Check height recovery (relaxed for realtime)
+        height_recovered = True  # Default to true for faster response
+        if len(self.height_history) >= 5:
+            current_h = features.get("height", 0)
+            recent_max = max(self.height_history[-5:])
+            if recent_max > 0 and current_h > 0:
+                # If current height is at least 60% of recent max, consider recovered
+                height_recovered = (current_h / recent_max) > 0.6
+        
+        # Need just 2-3 consistent upright frames (faster than before)
+        if len(self.recovery_history) >= 2:
+            recent_upright = sum(self.recovery_history[-3:]) if len(self.recovery_history) >= 3 else sum(self.recovery_history[-2:])
+            required = 2 if len(self.recovery_history) >= 3 else 1
+            if recent_upright >= required and height_recovered:
                 return True
         
         return False
@@ -302,8 +317,17 @@ class FallStateMachine:
             self.hypothesis_frame_count += 1
             self.hypothesis_scores.append(fall_score.confidence)
             
-            # Check for early high-confidence decision (demo mode)
-            if self.mode == "demo":
+            # Quick recovery check - if person is clearly upright, reset immediately
+            ar = features.get("bbox_aspect_ratio", 1.5)
+            hw_ratio = features.get("hw_ratio", 0.5)
+            if ar < 0.9 and hw_ratio < 0.55:
+                self.state = FallState.NORMAL
+                self.hypothesis_scores = []
+                self.score_accumulator *= 0.2
+                decision.reason = "Quick recovery - upright posture detected"
+                # Skip rest of hypothesis processing
+            elif self.mode == "demo":
+                # Check for early high-confidence decision (demo mode)
                 max_score = max(self.hypothesis_scores)
                 if max_score >= self.early_score_high and self.hypothesis_frame_count <= self.early_frames_thres:
                     self.state = FallState.FALL
@@ -319,8 +343,8 @@ class FallStateMachine:
                     self.verify_frame_count = 1
                     self.verify_lying_count = 1 if is_lying else 0
                     decision.reason = "Entered verification"
-                elif self.hypothesis_frame_count > 15 and avg_score < 0.3:
-                    # False alarm - not enough evidence
+                elif self.hypothesis_frame_count > 10 and avg_score < 0.35:
+                    # False alarm - not enough evidence (faster timeout)
                     self.state = FallState.NORMAL
                     self.hypothesis_scores = []
                     self.score_accumulator *= 0.3

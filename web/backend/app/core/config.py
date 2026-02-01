@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     version: str = "1.0.0"
     
     # CORS
-    allowed_origins: List[str] = ["http://localhost:5173", "http://localhost:3000"]
+    allowed_origins: List[str] = ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
     
     # WebSocket
     ws_max_fps: int = 15
