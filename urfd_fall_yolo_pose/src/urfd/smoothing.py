@@ -157,7 +157,13 @@ class FallStateMachine:
         """
         Check if person has recovered from lying (false positive suppression).
         
-        If person briefly lies down then returns upright, it's likely not a fall.
+        ADAPTIVE RECOVERY: Uses both bbox and angle intelligently
+        
+        Recovery signals:
+        1. Height recovery (bbox height returns to baseline)
+        2. Aspect ratio upright (W/H < threshold)
+        3. Angle upright (if available and reliable)
+        4. Upward motion (dy < 0, moving up)
         
         Args:
             features: Current frame features
@@ -166,30 +172,13 @@ class FallStateMachine:
             recovered: True if recovery detected
         """
         recovery_window = self.config["recovery_window"]
-        recovery_upright_angle_thres = self.config["recovery_upright_angle_thres"]
-        recovery_ar_thres = self.config["recovery_ar_thres"]
-        recovery_height_recover_ratio = self.config["recovery_height_recover_ratio"]
+        recovery_upright_angle_thres = self.config.get("recovery_upright_angle_thres", 55.0)
+        recovery_ar_thres = self.config.get("recovery_ar_thres", 1.25)
+        recovery_height_recover_ratio = self.config.get("recovery_height_recover_ratio", 0.75)
         
-        # Check upright posture via keypoints
-        is_upright_keypoint = (
-            features["body_angle_deg"] is not None and
-            features["body_angle_deg"] < recovery_upright_angle_thres
-        )
-        
-        # Check upright posture via bbox (fallback)
-        is_upright_bbox = (
-            features["bbox_aspect_ratio"] is not None and
-            features["bbox_aspect_ratio"] < recovery_ar_thres
-        )
-        
-        is_upright = is_upright_keypoint or is_upright_bbox
-        
-        # Track recovery history
-        self.recovery_history.append(1 if is_upright else 0)
-        if len(self.recovery_history) > recovery_window:
-            self.recovery_history.pop(0)
-        
-        # Check if height has recovered to baseline
+        # =========================================================
+        # SIGNAL 1: Height recovery (PRIMARY - always available)
+        # =========================================================
         height_recovered = False
         if len(self.height_history) >= recovery_window:
             recent_max_height = max(self.height_history[-recovery_window:])
@@ -197,21 +186,88 @@ class FallStateMachine:
             if baseline_height > 0:
                 height_recovered = (recent_max_height / baseline_height) > recovery_height_recover_ratio
         
-        # Different recovery criteria based on current state
+        # =========================================================
+        # SIGNAL 2: Bbox aspect ratio upright (SECONDARY)
+        # =========================================================
+        hw_ratio = features.get("hw_ratio", 0.0)
+        is_upright_bbox = hw_ratio < recovery_ar_thres and hw_ratio > 0
+        
+        # =========================================================
+        # SIGNAL 3: Angle upright (TERTIARY - if available)
+        # =========================================================
+        angle = features.get("body_angle_deg")
+        feature_valid = features.get("feature_valid", False)
+        is_upright_angle = False
+        angle_confidence = 0.0
+        
+        if feature_valid and angle is not None:
+            is_upright_angle = angle < recovery_upright_angle_thres
+            # Angle confidence: how "upright" it is (0-1 scale)
+            angle_confidence = max(0, (recovery_upright_angle_thres - angle) / recovery_upright_angle_thres)
+        
+        # =========================================================
+        # SIGNAL 4: Upward motion (BONUS)
+        # =========================================================
+        dy = features.get("dy", 0.0)
+        is_moving_up = dy < -2.0  # Negative dy = moving up
+        
+        # =========================================================
+        # ADAPTIVE UPRIGHT DECISION
+        # Combine signals based on availability and confidence
+        # =========================================================
+        
+        # Count strong upright signals
+        strong_signals = 0
+        if is_upright_bbox:
+            strong_signals += 1
+        if is_upright_angle and angle_confidence > 0.5:
+            strong_signals += 1
+        if is_moving_up:
+            strong_signals += 1
+        
+        # Decision: upright if have strong signals OR clear bbox + angle agreement
+        is_upright = False
+        if strong_signals >= 2:
+            is_upright = True
+        elif is_upright_bbox and is_upright_angle:
+            is_upright = True
+        elif hw_ratio < 0.85 and (is_upright_angle or not feature_valid):
+            # Very narrow bbox → definitely upright
+            is_upright = True
+        
+        # Track recovery history
+        self.recovery_history.append(1 if is_upright else 0)
+        if len(self.recovery_history) > recovery_window:
+            self.recovery_history.pop(0)
+        
+        # =========================================================
+        # RECOVERY DECISION based on state
+        # =========================================================
+        
         if self.state == "FALL_CONFIRMED":
-            # Require sustained recovery: 6-8 consecutive upright frames
-            # INCREASED: 4→8 to prevent premature reset on falls
-            if len(self.recovery_history) >= 8:
-                recent_upright = self.recovery_history[-8:]
-                # Need at least 6 out of 8 frames upright
-                if sum(recent_upright) >= 6 and height_recovered:
+            # Require sustained recovery: majority upright + height recovered
+            # BALANCED: Need clear evidence but not too strict
+            if len(self.recovery_history) >= 10:
+                recent_upright = self.recovery_history[-10:]
+                upright_ratio = sum(recent_upright) / len(recent_upright)
+                
+                # Need 70% upright frames + height recovered
+                if upright_ratio >= 0.7 and height_recovered:
                     return True
-        else:
-            # Standard recovery for CANDIDATE state
-            # More sensitive since not yet confirmed
-            if len(self.recovery_history) >= recovery_window // 2:
-                upright_count = sum(self.recovery_history[-recovery_window // 2:])
-                if upright_count >= recovery_window // 3 and height_recovered:
+                
+                # OR very strong upright signals (8/10 frames) even without full height
+                if upright_ratio >= 0.8:
+                    return True
+        
+        elif self.state == "CANDIDATE":
+            # More sensitive recovery for candidate state
+            # Prevent false alarms from transient postures (bending, picking up)
+            if len(self.recovery_history) >= 6:
+                recent_upright = self.recovery_history[-6:]
+                upright_ratio = sum(recent_upright) / len(recent_upright)
+                
+                # Need 60% upright frames
+                if upright_ratio >= 0.6:
                     return True
         
         return False
@@ -290,10 +346,13 @@ class FallStateMachine:
         )
         
         # Check lying posture (relaxed thresholds for confirmation)
+        # Pass history for low_height_duration check
         is_lying = check_lying_posture(
             features,
             self.config["confirm_angle_thres"],
-            self.config["confirm_ar_thres"]
+            self.config["confirm_ar_thres"],
+            history=self.height_history,
+            config=self.config
         )
         
         # =========================================================
@@ -364,12 +423,16 @@ class FallStateMachine:
                 angle_blocks = False  # Only block if VERY clear ADL
                 
                 if feature_valid and angle is not None:
-                    # STRENGTHENED: Block more ADL false positives
+                    # STRENGTHENED: Block more ADL false positives (sitting, yoga, etc.)
+                    # If person is upright-ish (angle < 45°) with tall bbox (hw < 1.0), likely ADL
                     if hw_ratio >= 1.0 and angle < 40:
                         angle_blocks = True
                     elif hw_ratio >= 0.95 and angle < 38:
                         angle_blocks = True
                     elif hw_ratio >= 1.1 and angle < 43:
+                        angle_blocks = True
+                    elif hw_ratio >= 0.90 and angle < 45:
+                        # NEW: Catch more upright ADL activities
                         angle_blocks = True
                 
                 if angle_blocks:
@@ -402,21 +465,44 @@ class FallStateMachine:
                     self.candidate_history = []
         
         elif self.state == "FALL_CONFIRMED":
-            # Check for recovery (person stands up after fall alarm)
-            has_recovered = self._check_recovery(features)
-            
-            if has_recovered:
-                # Recovery - reset everything
-                self.state = "NORMAL"
-                self.fall_confirmed = False
-                self.score_accumulator = 0.0
-                self.candidate_history = []
-                self.confirm_history = []
-                self.recovery_history = []
-                print("RECOVERY DETECTED: Person stood up, resetting to NORMAL state")
+            # =========================================================
+            # HANDLE MISSING DETECTION (bbox loss)
+            # =========================================================
+            if features["bbox"] is None:
+                self.missing_streak += 1
+                
+                # If missing for too long, check if should reset or maintain
+                if self.missing_streak >= self.config["max_missing_streak"]:
+                    # Long missing → likely person left scene or stood up
+                    # Reset to NORMAL but log it
+                    self.state = "NORMAL"
+                    self.fall_confirmed = False
+                    self.score_accumulator = 0.0
+                    print(f"RESET: No detection for {self.missing_streak} frames after fall")
+                    self.missing_streak = 0
+                else:
+                    # Short missing → maintain FALL_CONFIRMED
+                    # This handles temporary occlusions
+                    self.score_accumulator = 1.0
             else:
-                # Maintain confirmed state
-                self.score_accumulator = 1.0
+                # Detection present - reset missing streak
+                self.missing_streak = 0
+                
+                # Check for recovery (person stands up after fall alarm)
+                has_recovered = self._check_recovery(features)
+                
+                if has_recovered:
+                    # Recovery - reset everything
+                    self.state = "NORMAL"
+                    self.fall_confirmed = False
+                    self.score_accumulator = 0.0
+                    self.candidate_history = []
+                    self.confirm_history = []
+                    self.recovery_history = []
+                    print("RECOVERY DETECTED: Person stood up, resetting to NORMAL state")
+                else:
+                    # Maintain confirmed state
+                    self.score_accumulator = 1.0
         
         # Clamp score to valid range
         self.score_accumulator = np.clip(self.score_accumulator, 0.0, 1.0)

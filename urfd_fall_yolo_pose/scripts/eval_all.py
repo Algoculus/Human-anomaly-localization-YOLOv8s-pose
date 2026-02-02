@@ -105,6 +105,7 @@ def process_sequence(seq_info, detector, config, save_video=True):
         sequence_max_scores.append(max_frame_score)
     
     fall_confirmed = False
+    final_state_is_fall = False
     
     for tid, sm in state_machines.items():
         track_states = []
@@ -114,6 +115,7 @@ def process_sequence(seq_info, detector, config, save_video=True):
             else:
                 track_states.append("NONE")
         
+        # Check if had sustained fall (max consecutive FALL_CONFIRMED)
         max_consecutive = 0
         current_consecutive = 0
         for s in track_states:
@@ -126,9 +128,25 @@ def process_sequence(seq_info, detector, config, save_video=True):
         min_confirm = config.get("min_confirm_duration_frames", 3)
         if max_consecutive >= min_confirm:
             fall_confirmed = True
+            
+            # CRITICAL FIX: Check final state for recovery
+            # If person recovered to NORMAL at end, NOT a fall
+            # Find last valid state for this track
+            last_valid_state = None
+            for frame_data in reversed(all_tracks_data):
+                if tid in frame_data:
+                    last_valid_state = frame_data[tid]["state"]
+                    break
+            
+            # Only count as fall if STILL in FALL_CONFIRMED at end
+            if last_valid_state == "FALL_CONFIRMED":
+                final_state_is_fall = True
             break
     
-    pred_label = 1 if fall_confirmed else 0
+    # Predict fall ONLY if:
+    # 1. Had sustained FALL_CONFIRMED period, AND
+    # 2. Did NOT recover to NORMAL at end
+    pred_label = 1 if (fall_confirmed and final_state_is_fall) else 0
     max_score = max(sequence_max_scores) if sequence_max_scores else 0.0
     
     if save_video:

@@ -1,0 +1,129 @@
+# ========================================
+# FRONTAL WEBCAM CONFIGURATION (CAM0-SAFE)
+# Optimized for real-time fall detection with camera facing subject directly
+# Uses Impact + Shape drop triggers (NO angle dependency)
+# ========================================
+
+# YOLOv8 Pose Model Configuration
+yolo_model: 'yolov8s-pose.pt'
+imgsz: 640
+conf_thres: 0.30
+iou_thres: 0.45
+keypoint_conf_thres: 0.45
+
+# Low-light preprocessing
+preprocess_lowlight: true
+gamma: 1.2
+clahe_clip: 1.8
+clahe_grid: 8
+
+# Primary Person Tracking
+track_iou_thres: 0.35
+track_center_dist_thres: 1.3
+track_max_missing: 6
+
+# Fallback tracking
+fallback_track_max_gap: 5
+fallback_tracker_type: 'kcf'
+
+# ========================================
+# CAM0-SAFE FALL DETECTION
+# Trigger: Impact + Shape drop (works even when falling toward/away from camera)
+# Confirm: Low height duration + motion settled
+# ========================================
+
+# Angle thresholds (ONLY for ADL rejection, not for triggering)
+angle_thres: 50.0  # ADL rejection threshold
+confirm_angle_thres: 50.0  # Confirmation bonus (if available)
+
+# Aspect ratio thresholds
+ar_thres: 1.10  # Relaxed for frontal cam
+confirm_ar_thres: 1.20  # Confirmation threshold
+
+# ========================================
+# GROUP 1: IMPACT DETECTION
+# At least 1 required for trigger
+# ========================================
+dy_peak_thres: 6.0  # Impact: velocity peak
+impact_dy_thres: 6.0  # Impact velocity threshold
+impact_height_collapse_ratio: 0.08  # Impact: 8% height collapse per frame
+impact_acceleration_thres: 3.0  # Impact: free fall acceleration
+
+# ========================================
+# GROUP 2: SHAPE DROP DETECTION
+# At least 1 required for trigger
+# ========================================
+height_drop_thres: 0.14  # 14% height drop (more sensitive for frontal)
+height_drop_thres_strong: 0.18  # 18% strong signal
+shape_width_increase_ratio: 0.12  # 12% width increase
+shape_ar_change_thres: 0.20  # d_ar >= 0.20 (more sensitive for frontal)
+
+# ========================================
+# CONFIRMATION: LOW HEIGHT DURATION
+# Branch 1 - cam0-safe (no angle)
+# ========================================
+low_height_confirm_frames: 12  # Faster confirmation for real-time
+low_height_ratio: 0.70  # Consider "low" if < 70% of max
+motion_settle_threshold: 3.0  # Motion settled if |dy| < 3.0
+motion_settle_window: 6  # Shorter window for real-time
+min_impact_for_confirmation: 3.5  # Lower threshold for frontal cam
+
+# ========================================
+# TEMPORAL DYNAMICS
+# ========================================
+dy_fall_thres: 10.0
+dy_window: 5
+dy_short_window: 3
+dy_long_window: 10
+
+# Border integrity check
+border_margin: 12
+
+# High-angle threshold (bonus only)
+high_angle_thres: 60.0
+
+# Height Drop Analysis
+height_drop_short_window: 5
+
+# ========================================
+# TEMPORAL SMOOTHING - TUNED FOR REAL-TIME
+# ========================================
+cand_enter_frames: 2
+cand_tolerance: 2
+confirm_frames: 2
+confirm_tolerance: 2
+confirm_window: 8
+height_window: 10
+
+# Missing Detection Handling
+max_missing_streak: 4
+
+# ========================================
+# RECOVERY DETECTION - CONSERVATIVE
+# ========================================
+recovery_window: 18
+recovery_upright_angle_thres: 50.0
+recovery_ar_thres: 1.15
+recovery_height_recover_ratio: 0.80
+
+# Motion Settling
+motion_settle_window: 6
+settle_dy_abs_thres: 8.0
+
+# Slow Transition Gate (ADL rejection)
+slow_lie_max_dy_peak: 15.0
+
+# Score Parameters
+score_decay: 0.88
+score_boost_candidate: 0.06
+score_boost_confirmed: 1.0
+
+# Minimum consecutive FALL_CONFIRMED frames
+min_confirm_duration_frames: 2
+
+# Output Settings
+output_fps: 25
+output_dir: 'outputs'
+
+# Reproducibility
+seed: 42

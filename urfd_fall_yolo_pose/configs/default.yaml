@@ -20,38 +20,56 @@ track_max_missing: 8
 fallback_track_max_gap: 6
 fallback_tracker_type: 'kcf'
 
-# Fall Detection Rule Thresholds
-angle_thres: 55.0
-ar_thres: 1.15
-confirm_angle_thres: 48.0
-confirm_ar_thres: 1.35
-height_drop_thres: 0.18
-height_drop_thres_strong: 0.28
+# Fall Detection Rule Thresholds - CAM0-SAFE APPROACH
+# Trigger: Impact + Shape drop (NO angle required)
+# Confirm: Low height duration + motion settled (angle is bonus)
 
-# Dynamic Fall Detection
-dy_fall_thres: 10.0
+angle_thres: 55.0  # Legacy, only for ADL rejection
+ar_thres: 1.15  # Aspect ratio W/H
+confirm_angle_thres: 50.0  # Angle for confirmation (if available)
+confirm_ar_thres: 1.25  # AR for confirmation
+
+# Height drop thresholds (SHAPE DROP GROUP)
+height_drop_thres: 0.16  # 16% - Shape drop trigger
+height_drop_thres_strong: 0.20  # 20% - Strong shape signal
+
+# Dynamic Fall Detection - IMPACT GROUP
+dy_fall_thres: 10.0  # Legacy threshold
 dy_window: 5
 dy_short_window: 3
 dy_long_window: 10
-dy_peak_thres: 6.0 # BALANCED for 28/30 falls
+dy_peak_thres: 6.0  # Impact: velocity peak (6-8 depending on fps)
 
 # Border integrity check
 border_margin: 8
 
-# Impact verification for static posture path (lowered for better recall)
-impact_dy_thres: 3.5 # BALANCED for 28/30 falls
+# Impact verification thresholds
+impact_dy_thres: 6.0  # Impact: velocity >= 6.0
+impact_height_collapse_ratio: 0.08  # Impact: dh <= -8% per frame
+impact_acceleration_thres: 3.0  # Impact: d2y >= 3.0
 
-# High-angle threshold (new: very horizontal = likely fall)
+# Shape drop thresholds
+shape_width_increase_ratio: 0.12  # Shape: width increase >= 12%
+shape_ar_change_thres: 0.25  # Shape: d_ar >= 0.25
+
+# High-angle threshold
 high_angle_thres: 65.0
 
 # Height Drop Analysis
 height_drop_short_window: 5
 
+# Low height confirmation (BRANCH 1 - cam0-safe)
+low_height_confirm_frames: 15  # Require 15 frames of staying low
+low_height_ratio: 0.70  # Consider "low" if < 70% of max height
+motion_settle_threshold: 3.0  # Motion settled if |dy| < 3.0
+motion_settle_window: 8  # Check motion for last 8 frames
+min_impact_for_confirmation: 4.0  # Must have had dy_peak >= 4.0 in history
+
 # Temporal Smoothing Parameters
-cand_enter_frames: 2
-cand_tolerance: 1
-confirm_frames: 2 # BALANCED: 1→2 for better precision
-confirm_tolerance: 2
+cand_enter_frames: 2  # Need 2 candidate frames to enter CANDIDATE
+cand_tolerance: 1  # Allow 1 gap in candidate sequence
+confirm_frames: 2  # Need 2 lying frames for confirmation
+confirm_tolerance: 2  # Allow 2 gaps in confirmation sequence
 confirm_window: 10
 height_window: 12
 

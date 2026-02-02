@@ -1,0 +1,141 @@
+# ========================================
+# BALANCED FRONTAL CAM CONFIGURATION
+# Target: Recall 80-85%, Precision 85-90%
+# Optimized based on evaluation results (TP=17, FN=13, FP=1)
+# ========================================
+
+# YOLOv8 Pose Model Configuration
+yolo_model: 'yolov8s-pose.pt'
+imgsz: 640
+conf_thres: 0.28  # LOWERED: 0.30→0.28 (catch more detections)
+iou_thres: 0.45
+keypoint_conf_thres: 0.40  # LOWERED: 0.45→0.40 (more lenient keypoints)
+
+# Low-light preprocessing
+preprocess_lowlight: true
+gamma: 1.2
+clahe_clip: 1.8
+clahe_grid: 8
+
+# Primary Person Tracking
+track_iou_thres: 0.32  # LOWERED: 0.35→0.32 (maintain tracking better)
+track_center_dist_thres: 1.4  # INCREASED: 1.3→1.4 (more lenient association)
+track_max_missing: 7  # INCREASED: 6→7 (tolerate more missing frames)
+
+# Fallback tracking
+fallback_track_max_gap: 6  # INCREASED: 5→6
+fallback_tracker_type: 'kcf'
+
+# ========================================
+# BALANCED CAM0-SAFE FALL DETECTION
+# Key changes to improve recall:
+# 1. Lower impact thresholds (catch gentler falls)
+# 2. Relax shape drop requirements
+# 3. Faster confirmation (less missing frames)
+# 4. More lenient low height duration
+# ========================================
+
+# Angle thresholds (ONLY for ADL rejection)
+angle_thres: 50.0
+confirm_angle_thres: 48.0  # LOWERED: 50→48 (more lenient confirmation)
+
+# Aspect ratio thresholds
+ar_thres: 1.08  # LOWERED: 1.10→1.08 (more sensitive to lying)
+confirm_ar_thres: 1.18  # LOWERED: 1.20→1.18
+
+# ========================================
+# GROUP 1: IMPACT DETECTION (RELAXED)
+# ========================================
+dy_peak_thres: 5.0  # LOWERED: 6.0→5.0 (catch gentler impacts)
+impact_dy_thres: 5.0  # LOWERED: 6.0→5.0
+impact_height_collapse_ratio: 0.07  # LOWERED: 0.08→0.07 (7% per frame)
+impact_acceleration_thres: 2.5  # LOWERED: 3.0→2.5 (more sensitive)
+
+# ========================================
+# GROUP 2: SHAPE DROP DETECTION (RELAXED)
+# ========================================
+height_drop_thres: 0.12  # LOWERED: 0.14→0.12 (12% height drop)
+height_drop_thres_strong: 0.16  # LOWERED: 0.18→0.16
+shape_width_increase_ratio: 0.10  # LOWERED: 0.12→0.10 (10% width increase)
+shape_ar_change_thres: 0.18  # LOWERED: 0.20→0.18 (faster AR change)
+
+# ========================================
+# CONFIRMATION: FASTER & MORE LENIENT
+# ========================================
+low_height_confirm_frames: 10  # LOWERED: 12→10 (faster confirmation)
+low_height_ratio: 0.68  # LOWERED: 0.70→0.68 (more lenient low threshold)
+motion_settle_threshold: 3.5  # INCREASED: 3.0→3.5 (allow more motion)
+motion_settle_window: 6
+min_impact_for_confirmation: 3.0  # LOWERED: 3.5→3.0 (lower impact requirement)
+
+# ========================================
+# TEMPORAL DYNAMICS
+# ========================================
+dy_fall_thres: 10.0
+dy_window: 5
+dy_short_window: 3
+dy_long_window: 10
+
+# Border integrity check
+border_margin: 12
+
+# High-angle threshold
+high_angle_thres: 58.0  # LOWERED: 60→58 (more angle-assisted triggers)
+
+# Height Drop Analysis
+height_drop_short_window: 5
+
+# ========================================
+# TEMPORAL SMOOTHING - FASTER RESPONSE
+# ========================================
+cand_enter_frames: 1  # LOWERED: 2→1 (faster candidate entry)
+cand_tolerance: 2
+confirm_frames: 2
+confirm_tolerance: 2
+confirm_window: 9  # INCREASED: 8→9 (longer window)
+height_window: 12  # INCREASED: 10→12 (better height history)
+
+# Missing Detection Handling
+max_missing_streak: 5  # INCREASED: 4→5 (tolerate more gaps)
+
+# ========================================
+# RECOVERY DETECTION - KEEP CONSERVATIVE
+# (Already good at 97.5% specificity, don't change)
+# ========================================
+recovery_window: 18
+recovery_upright_angle_thres: 50.0
+recovery_ar_thres: 1.15
+recovery_height_recover_ratio: 0.80
+
+# Motion Settling
+motion_settle_window: 6
+settle_dy_abs_thres: 8.0
+
+# Slow Transition Gate (ADL rejection)
+slow_lie_max_dy_peak: 15.0
+
+# Score Parameters
+score_decay: 0.86  # LOWERED: 0.88→0.86 (slower decay, maintain score longer)
+score_boost_candidate: 0.07  # INCREASED: 0.06→0.07 (faster score buildup)
+score_boost_confirmed: 1.0
+
+# Minimum consecutive FALL_CONFIRMED frames
+min_confirm_duration_frames: 2
+
+# Output Settings
+output_fps: 30
+output_dir: 'outputs'
+
+# Reproducibility
+seed: 42
+
+# ========================================
+# EXPECTED IMPROVEMENTS
+# ========================================
+# Current: Precision=94.4%, Recall=56.7%, F1=70.8%
+# Target:  Precision=85-90%, Recall=80-85%, F1=82-87%
+#
+# Key changes:
+# - Lower thresholds → Catch 10-13 more falls (TP: 17→27-30)
+# - May add 1-2 FP (FP: 1→2-3)
+# - Net improvement: F1 score +11-16 points

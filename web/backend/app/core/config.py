@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     max_upload_size: int = 100 * 1024 * 1024  # 100MB
     
     # Core AI
-    core_config_path: str = "../../urfd_fall_yolo_pose/configs/default.yaml"
+    core_config_path: str = "../../urfd_fall_yolo_pose/configs/frontal_webcam.yaml"
     yolo_model_path: str = "../../urfd_fall_yolo_pose/yolov8s-pose.pt"
     core_scripts_dir: str = "../../urfd_fall_yolo_pose/scripts"
     
