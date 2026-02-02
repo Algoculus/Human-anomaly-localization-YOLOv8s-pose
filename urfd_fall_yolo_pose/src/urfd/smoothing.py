@@ -128,15 +128,19 @@ class FallStateMachine:
         """
         Check if current lying posture is from slow transition (not a fall).
         
-        Slow transitions (yoga, sleeping) have lower dy_peak values.
+        Slow transitions (yoga, sleeping, controlled lying down) have lower dy_peak values
+        throughout the entire transition period.
+        
+        This function checks BOTH:
+        1. Short window (last 3 frames) - for immediate motion
+        2. Long window (entire history) - for overall transition speed
         
         Args:
             features: Current frame features
         
         Returns:
-            is_slow: True if transition appears slow
+            is_slow: True if transition appears slow (NOT a fall)
         """
-        dy_peak_thres = self.config["dy_peak_thres"]
         slow_lie_max_dy_peak = self.config["slow_lie_max_dy_peak"]
         
         # Track dy peaks over time
@@ -145,11 +149,18 @@ class FallStateMachine:
         if len(self.dy_peak_history) > dy_long_window:
             self.dy_peak_history.pop(0)
         
-        # Check maximum dy_peak in short window
+        # SHORT WINDOW CHECK: Check if recent motion is slow
         if len(self.dy_peak_history) >= self.config["dy_short_window"]:
-            max_dy_peak = max(self.dy_peak_history[-self.config["dy_short_window"]:])
-            # If peak is below slow threshold, it's controlled motion
-            return max_dy_peak < slow_lie_max_dy_peak
+            max_dy_peak_short = max(self.dy_peak_history[-self.config["dy_short_window"]:])
+            
+            # LONG WINDOW CHECK: Check if ALL motion throughout transition was slow
+            # This catches cases where person lies down slowly over many frames
+            max_dy_peak_all = max(self.dy_peak_history) if self.dy_peak_history else 0.0
+            
+            # If BOTH the recent peak AND the maximum ever observed are below threshold,
+            # this is a controlled slow transition, not a fall
+            if max_dy_peak_short < slow_lie_max_dy_peak and max_dy_peak_all < slow_lie_max_dy_peak:
+                return True
         
         return False
     
@@ -385,8 +396,13 @@ class FallStateMachine:
                 if is_slow_transition:
                     # Slow controlled transition - not a fall
                     can_confirm = False
+                    print(f"[SLOW_TRANSITION] Blocked FALL confirmation: "
+                          f"max_dy_peak={max_dy_peak_observed:.1f} < min_dy_peak_for_fall={min_dy_peak_for_fall:.1f}")
                 
+                # Debug logging for state transitions
                 if can_confirm:
+                    print(f"[FALL_CONFIRMED] dy_peak={dy_peak:.1f}, max_observed={max_dy_peak_observed:.1f}, "
+                          f"threshold={min_dy_peak_for_fall:.1f}, height_drop={height_drop:.3f}")
                     self.state = "FALL_CONFIRMED"
                     self.fall_confirmed = True
                     self.score_accumulator = self.config["score_boost_confirmed"]
