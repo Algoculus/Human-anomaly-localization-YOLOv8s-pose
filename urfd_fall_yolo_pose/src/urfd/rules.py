@@ -1,11 +1,13 @@
 import numpy as np
 
 def check_fall_candidate(features, angle_thres, ar_thres, height_drop, 
-                         height_drop_thres, dy_fall_thres, impact_dy_thres=5.0,
-                         high_angle_thres=65.0):
+                         height_drop_thres, dy_fall_thres, impact_dy_thres=10.0,
+                         high_angle_thres=65.0, high_angle_dy_peak_thres=8.0,
+                         min_candidate_dy_peak=12.0):
     """
     Check if current frame is a fall candidate.
     
+<<<<<<< HEAD
     ADAPTIVE CAM0-SAFE APPROACH: 
     - PRIMARY: Trigger detection WITHOUT relying on body angle (Impact + Shape drop)
     - ADAPTIVE: Use angle intelligently when bbox is unreliable or person turned away
@@ -34,16 +36,35 @@ def check_fall_candidate(features, angle_thres, ar_thres, height_drop,
     
     KEY: Works for cam0 frontal view - fall toward/away camera still shows:
       - height decrease, width increase, bottom_y moves down, dy_peak appears
+=======
+    ALL PATHS NOW REQUIRE MINIMUM IMPACT MOTION (dy_peak >= min_candidate_dy_peak)
+    This prevents false positives from controlled lying down.
+    
+    A frame is a fall candidate if ANY of these conditions are met:
+    - PATH 1: (body_angle >= angle_thres AND AR >= ar_thres AND dy_peak >= impact_dy_thres)
+    - PATH 2: height_drop >= height_drop_thres AND dy_peak >= min_candidate_dy_peak
+    - PATH 3: dy >= dy_fall_thres AND dy_peak >= min_candidate_dy_peak
+    - PATH 4: body_angle >= high_angle_thres AND dy_peak >= high_angle_dy_peak_thres
+>>>>>>> 15eb1a4bccf6da447e5e6450b7099f4febb912ae
     
     Args:
         features: Frame features dict from compute_frame_features
         angle_thres: Angle threshold (used adaptively)
         ar_thres: Aspect ratio threshold (W/H)
         height_drop: Normalized height drop value
+<<<<<<< HEAD
         height_drop_thres: Height drop threshold
         dy_fall_thres: dy threshold
         impact_dy_thres: Minimum dy_peak for impact
         high_angle_thres: High angle threshold
+=======
+        height_drop_thres: Height drop threshold (0.18)
+        dy_fall_thres: dy threshold for fast fall detection (10.0)
+        impact_dy_thres: Minimum dy_peak for posture path (10.0)
+        high_angle_thres: High angle threshold for Path 4 (65.0)
+        high_angle_dy_peak_thres: Minimum dy_peak for high angle path (8.0)
+        min_candidate_dy_peak: Minimum dy_peak for PATH 2 & 3 (12.0)
+>>>>>>> 15eb1a4bccf6da447e5e6450b7099f4febb912ae
         
     Returns:
         is_candidate: True if fall candidate detected
@@ -95,6 +116,7 @@ def check_fall_candidate(features, angle_thres, ar_thres, height_drop,
         bbox_confidence *= 0.8
     
     # =========================================================
+<<<<<<< HEAD
     # ADAPTIVE MODE SELECTION
     # =========================================================
     
@@ -146,6 +168,35 @@ def check_fall_candidate(features, angle_thres, ar_thres, height_drop,
     # GROUP 1: IMPACT DETECTION (at least 1 required)
     # Adjusted thresholds based on bbox reliability
     # =========================================================
+=======
+    # PATH 2: HEIGHT DROP DETECTION
+    # Detects significant reduction in bbox height (person collapsed)
+    # REQUIRES minimum impact to distinguish from controlled lying
+    # =========================================================
+    dy_peak = features.get("dy_peak", 0.0)
+    height_drop_condition = (height_drop >= height_drop_thres and 
+                            dy_peak >= min_candidate_dy_peak)
+    
+    # =========================================================
+    # PATH 3: FAST MOTION DETECTION
+    # Detects rapid downward movement (free fall phase)
+    # REQUIRES minimum dy_peak to distinguish from controlled movement
+    # =========================================================
+    dy_condition = (features["dy"] >= dy_fall_thres and 
+                   dy_peak >= min_candidate_dy_peak)
+    
+    # =========================================================
+    # PATH 4: HIGH-ANGLE DETECTION (for catching frontal falls)
+    # Very horizontal posture with significant impact motion
+    # Requires higher dy_peak to distinguish from controlled lying
+    # =========================================================
+    high_angle_condition = False
+    if features["feature_valid"] and features["body_angle_deg"] is not None:
+        dy_peak = features.get("dy_peak", 0.0)
+        # Require significant impact to distinguish from normal lying
+        if features["body_angle_deg"] >= high_angle_thres and dy_peak >= high_angle_dy_peak_thres:
+            high_angle_condition = True
+>>>>>>> 15eb1a4bccf6da447e5e6450b7099f4febb912ae
     
     # Impact 1: High velocity peak (6-8 depending on fps)
     # Detects sudden downward motion / impact moment

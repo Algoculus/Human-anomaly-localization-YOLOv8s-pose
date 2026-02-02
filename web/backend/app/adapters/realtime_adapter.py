@@ -3,7 +3,7 @@
 
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 import cv2
 
@@ -18,10 +18,10 @@ class RealtimeSessionState:
     # Maintains state for a single real-time camera session.
     # Reuses core AI classes without modification.
     
-    def __init__(self, config_path: str):
+    def __init__(self, config_path: Union[str, Path]):
         # Initialize session with core AI components
-        # Load and validate config
-        self.config = load_config(config_path)
+        # Load and validate config (convert Path to str if needed)
+        self.config = load_config(str(config_path))
         validate_config(self.config)
         set_seed(self.config["seed"])
         
@@ -126,7 +126,9 @@ class RealtimeSessionState:
                 "state": state,
                 "score": float(score),
                 "bbox": None,
-                "keypoints": None
+                "keypoints": None,
+                "dy_peak": float(features.get("dy_peak", 0.0)),  # For debugging
+                "body_angle": float(features.get("body_angle_deg", 0.0)) if features.get("body_angle_deg") else None
             }
             
             if features["bbox"] is not None:
@@ -173,7 +175,7 @@ class RealtimeSessionState:
 class RealtimeSessionManager:
     # Manages multiple real-time sessions (one per camera/room)
     
-    def __init__(self, config_path: str):
+    def __init__(self, config_path: Union[str, Path]):
         self.config_path = config_path
         self.sessions: Dict[str, RealtimeSessionState] = {}
     

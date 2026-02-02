@@ -137,12 +137,14 @@ async def process_video_job(job_id: str, input_path: Path, job_dir: Path):
         metrics_path = job_dir / "metrics.json"
         
         # Build command to run infer_sequence.py
+        # Use OFFLINE config (default.yaml) for video file processing
+        # This uses 25 FPS thresholds tuned for video files
         cmd = [
             "python",
             str(settings.core_scripts_dir / "infer_sequence.py"),
             "--input", str(input_path),
             "--output", str(output_path),
-            "--config", str(settings.core_config_path),
+            "--config", str(settings.core_config_path_offline),
             "--save-metrics", str(metrics_path)
         ]
         

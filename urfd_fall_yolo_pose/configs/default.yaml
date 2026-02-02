@@ -20,9 +20,19 @@ track_max_missing: 8
 fallback_track_max_gap: 6
 fallback_tracker_type: 'kcf'
 
+<<<<<<< HEAD
 # Fall Detection Rule Thresholds - CAM0-SAFE APPROACH
 # Trigger: Impact + Shape drop (NO angle required)
 # Confirm: Low height duration + motion settled (angle is bonus)
+=======
+# Fall Detection Rule Thresholds
+angle_thres: 55.0
+ar_thres: 1.15
+confirm_angle_thres: 48.0
+confirm_ar_thres: 1.35
+height_drop_thres: 0.18
+height_drop_thres_strong: 0.28
+>>>>>>> 15eb1a4bccf6da447e5e6450b7099f4febb912ae
 
 angle_thres: 55.0  # Legacy, only for ADL rejection
 ar_thres: 1.15  # Aspect ratio W/H
@@ -38,11 +48,16 @@ dy_fall_thres: 10.0  # Legacy threshold
 dy_window: 5
 dy_short_window: 3
 dy_long_window: 10
+<<<<<<< HEAD
 dy_peak_thres: 6.0  # Impact: velocity peak (6-8 depending on fps)
+=======
+dy_peak_thres: 8.0
+>>>>>>> 15eb1a4bccf6da447e5e6450b7099f4febb912ae
 
 # Border integrity check
 border_margin: 8
 
+<<<<<<< HEAD
 # Impact verification thresholds
 impact_dy_thres: 6.0  # Impact: velocity >= 6.0
 impact_height_collapse_ratio: 0.08  # Impact: dh <= -8% per frame
@@ -53,7 +68,21 @@ shape_width_increase_ratio: 0.12  # Shape: width increase >= 12%
 shape_ar_change_thres: 0.25  # Shape: d_ar >= 0.25
 
 # High-angle threshold
+=======
+# Impact verification for static posture path (raised to reduce false positives from normal lying)
+impact_dy_thres: 10.0
+
+# High-angle threshold (very horizontal posture indicator)
+>>>>>>> 15eb1a4bccf6da447e5e6450b7099f4febb912ae
 high_angle_thres: 65.0
+
+# Minimum dy_peak required for high-angle path (distinguish from controlled lying)
+high_angle_dy_peak_thres: 8.0
+
+# Minimum dy_peak to trigger CANDIDATE for PATH 2 & 3 (prevent normal lying)
+# Normal controlled lying: dy_peak typically 3-10
+# Actual falls: dy_peak typically > 15-20
+min_candidate_dy_peak: 12.0
 
 # Height Drop Analysis
 height_drop_short_window: 5
@@ -86,8 +115,16 @@ recovery_height_recover_ratio: 0.75 # INCREASED: 0.70→0.75 (more strict)
 motion_settle_window: 8
 settle_dy_abs_thres: 10.0
 
-# Slow Transition Gate
-slow_lie_max_dy_peak: 18.0
+# Slow Transition Gate (controlled lying down detection)
+# If max dy_peak in short window is below this threshold, it's considered slow transition
+# Actual falls typically have dy_peak > 20-30, controlled lying usually < 15
+slow_lie_max_dy_peak: 15.0
+
+# Minimum dy_peak ever observed to confirm a fall (prevents false positives from normal lying)
+# This is the CRITICAL threshold that distinguishes falls from controlled lying
+# Real falls have rapid uncontrolled descent with dy_peak typically > 18-25
+# Normal lying down has controlled descent with dy_peak typically < 12-15
+min_dy_peak_for_fall: 18.0
 
 # Score Parameters
 score_decay: 0.85
