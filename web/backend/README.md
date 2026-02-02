@@ -43,10 +43,10 @@ pip install fastapi uvicorn websockets ultralytics opencv-python
 
 ```bash
 # From web/backend directory
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 4611
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 9000
 ```
 
-The server will start on `http://127.0.0.1:4611`.
+The server will start on `http://127.0.0.1:9000`.
 
 ## 🔌 API Endpoints
 

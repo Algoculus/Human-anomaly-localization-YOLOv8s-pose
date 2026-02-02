@@ -58,7 +58,7 @@ The application will operate at `http://localhost:3000`.
 
 ### Camera Page (`/camera`)
 - **Webcam Access**: Captures video from local webcam.
-- **WebSocket Streaming**: Sends video frames to the backend (`ws://localhost:4611/ws`).
+- **WebSocket Streaming**: Sends video frames to the backend (`ws://localhost:9000/ws`).
 - **Telemetry Overlay**: Receives inference results (bounding boxes, keypoints, state) and renders them on top of the video feed.
 - **Visuals**:
   - **Green**: Normal State
@@ -72,4 +72,4 @@ The application will operate at `http://localhost:3000`.
 
 ## 🤝 Backend Connection
 
-Ensure the FastAPI backend is running on port `4611` before using the frontend. The WebSocket connection string is hardcoded to `ws://localhost:4611/ws` in this demo version.
+Ensure the FastAPI backend is running on port `9000` before using the frontend. The WebSocket connection string is hardcoded to `ws://localhost:9000/ws` in this demo version.
