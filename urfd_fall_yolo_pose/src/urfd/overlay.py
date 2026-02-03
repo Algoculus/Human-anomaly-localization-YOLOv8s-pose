@@ -18,19 +18,7 @@ COLOR_CANDIDATE = (0, 165, 255)  # Orange
 COLOR_FALL = (0, 0, 255)         # Red
 
 def draw_skeleton(img, keypoints, color, conf_thres=0.5):
-    """
-    Draw skeleton on image.
-    
-    Draws:
-    - Circles at each keypoint location
-    - Lines connecting keypoints (skeleton structure)
-    
-    Args:
-        img: BGR image to draw on (modified in-place)
-        keypoints: Array of keypoints (17, 3) with [x, y, conf]
-        color: BGR color tuple
-        conf_thres: Minimum confidence threshold for drawing
-    """
+    # Draw skeleton on image (circles at keypoints and lines connecting them)
     # Draw keypoint circles
     for i, kp in enumerate(keypoints):
         x, y, conf = kp
@@ -50,20 +38,7 @@ def draw_skeleton(img, keypoints, color, conf_thres=0.5):
                 cv2.line(img, pt1, pt2, color, 2)
 
 def create_overlay_video(frames, all_tracks_data, output_path, fps):
-    """
-    Create overlay video with detection results for multiple tracks.
-    
-    Draws:
-    - Bounding boxes (color indicates state)
-    - Skeleton keypoints
-    - Track ID and score labels
-    
-    Args:
-        frames: List of BGR images
-        all_tracks_data: List (per frame) of Dict (track_id -> {bbox, keypoints, state, score})
-        output_path: Output video path
-        fps: Output video FPS
-    """
+    # Create overlay video with detection results (bboxes, skeletons, labels)
     if len(frames) == 0:
         return
     

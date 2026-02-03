@@ -4,24 +4,7 @@ from pathlib import Path
 from datetime import datetime
 
 def compute_metrics(gt_labels, pred_labels):
-    """
-    Compute evaluation metrics at sequence level.
-    
-    Metrics computed:
-    - Confusion matrix (TP, TN, FP, FN)
-    - Accuracy: (TP + TN) / Total
-    - Precision: TP / (TP + FP)
-    - Recall: TP / (TP + FN)
-    - Specificity: TN / (TN + FP)
-    - F1-Score: 2 * Precision * Recall / (Precision + Recall)
-    
-    Args:
-        gt_labels: Array of ground truth labels (0=ADL, 1=Fall)
-        pred_labels: Array of predicted labels (0=ADL, 1=Fall)
-    
-    Returns:
-        metrics: Dict containing confusion_matrix, accuracy, precision, recall, specificity, f1_score
-    """
+    # Compute evaluation metrics: confusion matrix, accuracy, precision, recall, specificity, F1-score
     gt_labels = np.array(gt_labels)
     pred_labels = np.array(pred_labels)
     
@@ -52,28 +35,12 @@ def compute_metrics(gt_labels, pred_labels):
     return metrics
 
 def save_metrics(metrics, output_path):
-    """
-    Save metrics to JSON file.
-    
-    Args:
-        metrics: Metrics dict
-        output_path: Path to output JSON file
-    """
+    # Save metrics to JSON file
     with open(output_path, 'w') as f:
         json.dump(metrics, f, indent=2)
 
 def plot_confusion_matrix(metrics, output_path):
-    """
-    Plot confusion matrix as heatmap.
-    
-    Layout:
-    [[TP, FN],   <- Actual Fall
-     [FP, TN]]   <- Actual ADL
-    
-    Args:
-        metrics: Metrics dict containing confusion_matrix
-        output_path: Path to save PNG file
-    """
+    # Plot confusion matrix as heatmap and save to PNG
     import matplotlib
     matplotlib.use('Agg')  # Non-interactive backend
     import matplotlib.pyplot as plt
@@ -95,15 +62,7 @@ def plot_confusion_matrix(metrics, output_path):
     plt.close()
 
 def plot_metrics_bars(metrics, output_path):
-    """
-    Plot metrics as bar chart.
-    
-    Shows: Accuracy, Precision, Recall, Specificity, F1-Score
-    
-    Args:
-        metrics: Metrics dict
-        output_path: Path to save PNG file
-    """
+    # Plot metrics as bar chart (Accuracy, Precision, Recall, Specificity, F1-Score)
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
@@ -134,16 +93,7 @@ def plot_metrics_bars(metrics, output_path):
     plt.close()
 
 def create_evaluation_plots(metrics, output_dir):
-    """
-    Create all evaluation plots.
-    
-    Args:
-        metrics: Metrics dict
-        output_dir: Output directory for plots
-    
-    Returns:
-        plot_paths: Dict of plot file paths
-    """
+    # Create all evaluation plots and return dict of plot paths
     plots_dir = Path(output_dir) / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
     
@@ -158,15 +108,7 @@ def create_evaluation_plots(metrics, output_dir):
     return {"confusion_matrix": str(cm_path), "metrics_bars": str(bars_path)}
 
 def save_evaluation_summary(metrics, config, plot_paths, output_path):
-    """
-    Save comprehensive evaluation summary.
-    
-    Args:
-        metrics: Metrics dict
-        config: Configuration dict
-        plot_paths: Dict of plot file paths
-        output_path: Path to save summary JSON
-    """
+    # Save comprehensive evaluation summary to JSON
     summary = {
         "timestamp": datetime.now().isoformat(),
         "config": config,

@@ -1,30 +1,10 @@
-"""
-Low-light preprocessing for improving YOLO detection in dark scenes.
-Uses gamma correction + CLAHE on luminance channel.
-"""
+# Low-light preprocessing for improving YOLO detection in dark scenes (gamma correction + CLAHE)
 
 import cv2
 import numpy as np
 
 def preprocess_lowlight(frame, gamma=1.3, clahe_clip=2.0, clahe_grid=8):
-    """
-    Apply gamma correction and CLAHE to improve visibility in dark scenes.
-    
-    Algorithm:
-    1. Convert BGR to YCrCb (separate luminance from chrominance)
-    2. Apply gamma correction to Y channel (brightens dark areas)
-    3. Apply CLAHE to Y channel (enhances local contrast)
-    4. Convert back to BGR
-    
-    Args:
-        frame: Input BGR frame (numpy array)
-        gamma: Gamma correction value (>1 brightens, <1 darkens)
-        clahe_clip: CLAHE clip limit (higher = more contrast)
-        clahe_grid: CLAHE grid size (smaller = more local)
-    
-    Returns:
-        Preprocessed BGR frame
-    """
+    # Apply gamma correction and CLAHE to improve visibility in dark scenes
     # Convert to YCrCb (Y = luminance, CrCb = chrominance)
     ycrcb = cv2.cvtColor(frame, cv2.COLOR_BGR2YCrCb)
     y_channel = ycrcb[:, :, 0]

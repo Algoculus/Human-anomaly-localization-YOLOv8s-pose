@@ -18,18 +18,7 @@ from src.urfd.utils import load_config, set_seed, validate_config
 from prepare_urfd import prepare_urfd
 
 def process_sequence(seq_info, detector, config, save_video=True):
-    """
-    Process a single sequence and return prediction results.
-    
-    Args:
-        seq_info: Dict with seq_name, frame_dir, gt_label
-        detector: YOLOPoseDetector instance
-        config: Configuration dict
-        save_video: Whether to save overlay video
-        
-    Returns:
-        result: Dict with seq_name, gt_label, pred_label, pred_score or None
-    """
+    # Process a single sequence and return prediction results
     seq_name = seq_info["seq_name"]
     frame_dir = Path(seq_info["frame_dir"])
     gt_label = seq_info["gt_label"]
@@ -155,15 +144,7 @@ def process_sequence(seq_info, detector, config, save_video=True):
     }
 
 def eval_all(root_dir, index_path, config_path, no_videos=False):
-    """
-    Evaluate all URFD sequences.
-    
-    Args:
-        root_dir: Root directory of URFD dataset
-        index_path: Path to index CSV file
-        config_path: Path to config YAML file
-        no_videos: Skip video generation if True
-    """
+    # Evaluate all URFD sequences
     config = load_config(config_path)
     set_seed(config["seed"])
     

@@ -1,6 +1,4 @@
-"""
-REST API Routes
-"""
+# REST API Routes
 from fastapi import APIRouter
 from . import health, upload, artifacts
 

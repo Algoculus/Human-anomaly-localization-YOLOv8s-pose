@@ -1,7 +1,4 @@
-"""
-FastAPI Main Application
-Production-grade fall detection service with WebSocket support.
-"""
+# FastAPI Main Application - Production-grade fall detection service with WebSocket support
 import os
 import sys
 from pathlib import Path
@@ -27,7 +24,7 @@ Path(settings.artifact_dir).mkdir(parents=True, exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown events"""
+    # Startup and shutdown events
     # Startup
     print(f"[STARTUP] Starting {settings.app_name} v{settings.version}")
     print(f"[CORE_AI] Core AI path: {CORE_AI_PATH}")
@@ -65,7 +62,7 @@ app.mount("/static", StaticFiles(directory=settings.artifact_dir), name="static"
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """Global exception handler"""
+    # Global exception handler
     return JSONResponse(
         status_code=500,
         content={"error": str(exc), "type": type(exc).__name__}

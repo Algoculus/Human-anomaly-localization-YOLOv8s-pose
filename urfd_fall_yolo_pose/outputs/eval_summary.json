@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-01-25T08:58:09.066130",
+  "timestamp": "2026-02-03T11:17:52.517739",
   "config": {
     "yolo_model": "yolov8s-pose.pt",
     "imgsz": 640,

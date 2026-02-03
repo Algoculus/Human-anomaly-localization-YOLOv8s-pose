@@ -16,15 +16,15 @@ export default defineConfig({
     strictPort: false,
     proxy: {
       '/api': {
-        target: 'http://localhost:9000',
+        target: 'http://localhost:8000',
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://localhost:9000',
+        target: 'ws://localhost:8000',
         ws: true,
       },
       '/artifacts': {
-        target: 'http://localhost:9000',
+        target: 'http://localhost:8000',
         changeOrigin: true,
       },
     },

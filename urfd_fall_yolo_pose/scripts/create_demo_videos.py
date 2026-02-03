@@ -11,15 +11,7 @@ from src.urfd.yolo_pose import YOLOPoseDetector
 from scripts.eval_all import process_sequence
 
 def create_demo_videos(root_dir, index_path, config_path, num_samples=5):
-    """
-    Generate demo videos for a subset of sequences.
-    
-    Args:
-        root_dir: Root directory of URFD dataset
-        index_path: Path to index CSV file
-        config_path: Path to config YAML file
-        num_samples: Number of samples per class
-    """
+    # Generate demo videos for a subset of sequences
     config = load_config(config_path)
     df_index = pd.read_csv(index_path)
     

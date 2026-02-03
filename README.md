@@ -15,15 +15,16 @@ This project implements an end-to-end fall detection system with:
 
 ## 📊 Performance Metrics
 
-| Metric      | Target | Achieved    | Status         |
-| ----------- | ------ | ----------- | -------------- |
-| Accuracy    | ≥0.85  | **0.900**   | ✅ Target Met  |
-| Precision   | ≥0.85  | **0.926**   | ✅ Target Met  |
-| Recall      | ≥0.80  | **0.833**   | ✅ Target Met  |
-| Specificity | ≥0.90  | **0.950**   | ✅ Target Met  |
-| F1-Score    | ≥0.85  | **0.877**   | ✅ Target Met  |
+| Metric      | Target | Achieved  | Status        |
+| ----------- | ------ | --------- | ------------- |
+| Accuracy    | ≥0.85  | **0.900** | ✅ Target Met |
+| Precision   | ≥0.85  | **0.926** | ✅ Target Met |
+| Recall      | ≥0.80  | **0.833** | ✅ Target Met |
+| Specificity | ≥0.90  | **0.950** | ✅ Target Met |
+| F1-Score    | ≥0.85  | **0.877** | ✅ Target Met |
 
 **Confusion Matrix Summary (70 Sequences)**:
+
 - **True Positives (TP)**: 25
 - **True Negatives (TN)**: 38
 - **False Positives (FP)**: 2
@@ -88,11 +89,13 @@ Human-anomaly-localization-YOLOv8s-pose/
 ## 🚀 Quick Start
 
 ### 1. Prerequisites
+
 - Python 3.10+
 - Node.js 18+
 - NVIDIA GPU (Optional, but recommended for real-time inference)
 
 ### 2. Backend & AI Core Setup
+
 ```bash
 # Install core dependencies
 cd urfd_fall_yolo_pose
@@ -104,26 +107,31 @@ pip install fastapi uvicorn websockets pydantic-settings python-multipart
 ```
 
 ### 3. Frontend Setup
+
 ```bash
 cd ../frontend
 npm install
 ```
 
 ### 4. Running the System
+
 **Terminal 1: FastAPI Backend**
+
 ```bash
 cd web/backend
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 9000
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 **Terminal 2: React Frontend**
+
 ```bash
 cd web/frontend
 npm run dev
-# Dashboard available at http://localhost:3005
+# Dashboard available at http://localhost:5173
 ```
 
 ### 5. Run Evaluation
+
 ```bash
 cd urfd_fall_yolo_pose
 python scripts/eval_all.py --root ../data --index ../data/urfd_index.csv --config configs/default.yaml
@@ -132,23 +140,29 @@ python scripts/eval_all.py --root ../data --index ../data/urfd_index.csv --confi
 ## 🧠 Core Features
 
 ### 1. Robust Pose Detection
+
 Powered by **YOLOv8s-pose**, extracting 17 keypoints per person. We apply automatic **Low-light Enhancement** using Gamma correction (γ=1.3) and CLAHE.
 
 ### 2. 4-Path Hybrid Fall Detection Logic
+
 - **Path 1**: Angle + AR + Impact (requires lying posture with impact velocity ≥5.0)
 - **Path 2**: Height Drop detection (bbox height dropped ≥18%)
 - **Path 3**: Fast Motion detection (dy ≥10.0 px/frame)
 - **Path 4**: High-Angle detection (body angle ≥65° with any motion) - catches slow/frontal falls
 
 ### 3. Border Integrity Check
+
 Disables AR-based detection when bbox touches image edges (prevents "close-to-camera" false positives).
 
 ### 4. Advanced Tracking & Occlusion
+
 - **Greedy Tracker**: Maintains identity using IoU + center distance cost function.
 - **KCF Fallback**: Kernelized Correlation Filter takes over when YOLO misses.
 
 ## 📄 License
+
 MIT License - See LICENSE file for details.
 
 ---
-**Last Updated**: January 24, 2026
+
+**Last Updated**: February 3, 2026

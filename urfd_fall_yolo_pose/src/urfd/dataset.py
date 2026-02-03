@@ -2,23 +2,7 @@ import cv2
 from pathlib import Path
 
 def load_sequence_frames(seq_path):
-    """
-    Load RGB frames from a URFD sequence folder.
-    
-    Search order (first match wins):
-    1. seq_path/seq_name/
-    2. seq_path/
-    3. seq_path/cam0/rgb/
-    4. seq_path/cam0-rgb/
-    5. seq_path/rgb/
-    
-    Args:
-        seq_path: Path to sequence folder
-    
-    Returns:
-        frames: List of BGR images (numpy arrays)
-        frame_paths: List of frame file paths
-    """
+    # Load RGB frames from a URFD sequence folder, returns (frames list, frame_paths list)
     seq_path = Path(seq_path)
     seq_name = seq_path.name
     

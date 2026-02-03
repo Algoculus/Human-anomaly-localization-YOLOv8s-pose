@@ -1,7 +1,4 @@
-"""
-WebSocket Hub - Room-based broadcast system
-Connects cameras with receivers in the same room
-"""
+# WebSocket Hub - Room-based broadcast system connecting cameras with receivers
 import asyncio
 import base64
 import time
@@ -17,7 +14,7 @@ from app.core.config import get_settings
 settings = get_settings()
 
 class ConnectionManager:
-    """Manages WebSocket connections with room-based routing"""
+    # Manages WebSocket connections with room-based routing
     
     def __init__(self):
         # room_id -> {"cameras": Set[WebSocket], "receivers": Set[WebSocket]}
@@ -33,8 +30,7 @@ class ConnectionManager:
         self.frame_timestamps: Dict[str, list] = {}  # session_id -> [timestamps]
     
     async def connect(self, websocket: WebSocket, role: str, room_id: str, device_id: str):
-        """Register new connection (WebSocket already accepted by caller)"""
-        # NOTE: WebSocket should already be accepted by the router before calling this
+        # Register new connection (WebSocket already accepted by caller)
         
         # Create room if not exists
         if room_id not in self.rooms:
@@ -66,7 +62,7 @@ class ConnectionManager:
         })
     
     def disconnect(self, websocket: WebSocket):
-        """Remove connection"""
+        # Remove connection
         if websocket not in self.connections:
             return
         
@@ -94,7 +90,7 @@ class ConnectionManager:
         print(f"[DISCONNECTED] {role.upper()} disconnected: {metadata['device_id']} from room {room_id}")
     
     def _check_frame_rate(self, session_id: str) -> bool:
-        """Check if frame rate is within limits"""
+        # Check if frame rate is within limits
         now = time.time()
         
         if session_id not in self.frame_timestamps:
@@ -121,7 +117,7 @@ class ConnectionManager:
         timestamp: float,
         frame_data_b64: str
     ):
-        """Process frame from camera"""
+        # Process frame from camera through core AI
         session_id = f"{room_id}_{device_id}"
         
         # Rate limiting
@@ -211,7 +207,7 @@ class ConnectionManager:
         score: float,
         snapshot_frame: Optional[np.ndarray]
     ):
-        """Broadcast alarm to all receivers in room"""
+        # Broadcast alarm to all receivers in room
         if room_id not in self.rooms:
             return
         
@@ -254,7 +250,7 @@ class ConnectionManager:
         print(f"🚨 ALARM broadcast to {len(receivers) - len(disconnected)} receivers in room {room_id}")
     
     def get_room_stats(self, room_id: str) -> Dict:
-        """Get statistics for a room"""
+        # Get statistics for a room
         if room_id not in self.rooms:
             return {"error": "Room not found"}
         

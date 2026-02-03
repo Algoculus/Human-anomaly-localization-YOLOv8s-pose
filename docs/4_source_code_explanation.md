@@ -31,7 +31,7 @@ Greedy Matching với Cost = $(1 - IoU) + Dist$.
 
 ```python
 # Path 1: Posture + Impact (disabled when border-clipped)
-if angle >= 55 and AR >= 1.15 and dy_peak >= 5.0:
+if angle >= 55.0 and AR >= 1.15 and dy_peak >= 5.0:
     angle_ar_condition = True
 
 # Path 2: Height Drop
@@ -55,15 +55,19 @@ if angle >= 65.0 and dy_peak >= 3.0:
 
 ## 3. Cấu hình ([configs/default.yaml])
 
-| Parameter | Value | Purpose |
-|-----------|-------|---------|
-| `impact_dy_thres` | 5.0 | Ngưỡng dy_peak cho Path 1 |
-| `dy_peak_thres` | 8.0 | Ngưỡng xác nhận fast motion |
-| `dy_fall_thres` | 10.0 | Ngưỡng dy cho Path 3 |
-| `height_drop_thres` | 0.18 | Ngưỡng sụt giảm chiều cao |
-| `high_angle_thres` | 65.0 | Ngưỡng góc cao cho Path 4 |
-| `border_margin` | 8 | Khoảng cách border check |
+| Parameter                     | Value | Purpose                           |
+| ----------------------------- | ----- | --------------------------------- |
+| `angle_thres`                 | 55.0  | Ngưỡng góc cho Path 1             |
+| `ar_thres`                    | 1.15  | Ngưỡng AR cho Path 1              |
+| `impact_dy_thres`             | 5.0   | Ngưỡng dy_peak cho Path 1         |
+| `dy_peak_thres`               | 8.0   | Ngưỡng xác nhận fast motion       |
+| `dy_fall_thres`               | 10.0  | Ngưỡng dy cho Path 3              |
+| `height_drop_thres`           | 0.18  | Ngưỡng sụt giảm chiều cao         |
+| `high_angle_thres`            | 65.0  | Ngưỡng góc cao cho Path 4         |
+| `border_margin`               | 8     | Khoảng cách border check          |
+| `confirm_frames`              | 3     | Số frame duy trì tư thế nằm       |
+| `min_confirm_duration_frames` | 2     | Số frame FALL_CONFIRMED liên tiếp |
 
 ---
 
-**Last Updated**: January 24, 2026
+**Last Updated**: February 3, 2026

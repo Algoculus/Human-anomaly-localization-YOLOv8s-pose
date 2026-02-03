@@ -48,7 +48,7 @@ export default function ReceiverPage() {
   }, []);
 
   const connect = () => {
-    const ws = new WebSocket(`ws://localhost:9000/ws`);
+    const ws = new WebSocket(`ws://localhost:8000/ws`);
 
     ws.onopen = () => {
       console.log("WebSocket connected");

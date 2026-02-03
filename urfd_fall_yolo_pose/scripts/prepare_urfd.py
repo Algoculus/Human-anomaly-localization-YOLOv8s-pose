@@ -6,16 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 def find_frames_dir(seq_path):
-    """
-    Find the directory containing RGB frames for cam0.
-    
-    Args:
-        seq_path: Path to sequence folder
-        
-    Returns:
-        frame_dir: Path to directory containing frames or None
-        num_frames: Number of frames found
-    """
+    # Find the directory containing RGB frames for cam0
     seq_path = Path(seq_path)
     seq_name = seq_path.name
     
@@ -49,13 +40,7 @@ def find_frames_dir(seq_path):
     return None, 0
 
 def prepare_urfd(root_dir, output_index):
-    """
-    Prepare URFD dataset index.
-    
-    Args:
-        root_dir: Path to URFD dataset root
-        output_index: Path to save the index CSV file
-    """
+    # Prepare URFD dataset index
     root_dir = Path(root_dir)
     
     if not root_dir.exists():

@@ -1,6 +1,4 @@
-"""
-Artifacts Serving (Processed Videos, Snapshots)
-"""
+# Artifacts Serving (Processed Videos, Snapshots)
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from app.core.config import get_settings
@@ -11,14 +9,7 @@ settings = get_settings()
 
 @router.get("/{artifact_type}/{filename}")
 async def get_artifact(artifact_type: str, filename: str):
-    """
-    Serve processed artifacts (videos, snapshots, reports).
-    
-    Examples:
-    - GET /artifacts/videos/processed_abc123.mp4
-    - GET /artifacts/snapshots/fall_2024_001.jpg
-    - GET /artifacts/reports/metrics_abc123.json
-    """
+    # Serve processed artifacts (videos, snapshots, reports)
     
     # Validate artifact type
     allowed_types = ["videos", "snapshots", "reports"]
@@ -67,9 +58,7 @@ async def get_artifact(artifact_type: str, filename: str):
 
 @router.delete("/{artifact_type}/{filename}")
 async def delete_artifact(artifact_type: str, filename: str):
-    """
-    Delete an artifact file.
-    """
+    # Delete an artifact file
     
     allowed_types = ["videos", "snapshots", "reports"]
     if artifact_type not in allowed_types:

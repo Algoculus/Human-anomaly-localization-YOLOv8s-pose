@@ -1,33 +1,13 @@
-"""
-Fallback classical tracker for when YOLO fails to detect in dark scenes.
-Uses OpenCV KCF/CSRT tracker to propagate bbox.
-"""
+# Fallback classical tracker for when YOLO fails to detect in dark scenes (uses OpenCV KCF/CSRT)
 
 import cv2
 import numpy as np
 
 class FallbackTracker:
-    """
-    Classical bbox tracker for propagating detections when YOLO misses.
-    
-    Use cases:
-    - Motion blur causing YOLO to miss
-    - Temporary occlusion
-    - Low-light conditions
-    
-    Supported trackers:
-    - KCF (Kernelized Correlation Filter) - fast, less accurate
-    - CSRT (Channel and Spatial Reliability) - slower, more accurate
-    """
+    # Classical bbox tracker for propagating detections when YOLO misses (motion blur, occlusion, low-light)
     
     def __init__(self, tracker_type="kcf", max_gap=6):
-        """
-        Initialize fallback tracker.
-        
-        Args:
-            tracker_type: "kcf", "csrt", or "none"
-            max_gap: Maximum frames to propagate without YOLO detection
-        """
+        # Initialize fallback tracker (kcf, csrt, or none)
         self.tracker_type = tracker_type.lower()
         self.max_gap = max_gap
         self.tracker = None
@@ -36,14 +16,7 @@ class FallbackTracker:
         self.is_active = False
     
     def _create_tracker(self):
-        """
-        Create OpenCV tracker instance.
-        
-        Handles different OpenCV versions (legacy vs new API).
-        
-        Returns:
-            OpenCV tracker or None if unavailable
-        """
+        # Create OpenCV tracker instance (handles different OpenCV versions)
         if self.tracker_type == "kcf":
             # Try new API first, then legacy API
             try:
@@ -65,15 +38,7 @@ class FallbackTracker:
             return None
     
     def initialize(self, frame, bbox):
-        """
-        Initialize tracker with a bbox.
-        
-        Called when YOLO successfully detects a person.
-        
-        Args:
-            frame: Current frame (BGR)
-            bbox: [x1, y1, x2, y2]
-        """
+        # Initialize tracker with a bbox (called when YOLO successfully detects)
         if self.tracker_type == "none":
             return
         
@@ -90,21 +55,7 @@ class FallbackTracker:
         self.missing_count = 0
     
     def update(self, frame, yolo_detections):
-        """
-        Update tracker and return pseudo-detection if needed.
-        
-        Logic:
-        1. If YOLO detected something: reset and return None
-        2. If within max_gap: propagate bbox using classical tracker
-        3. If beyond max_gap: give up and return None
-        
-        Args:
-            frame: Current frame (BGR)
-            yolo_detections: List of YOLO detections (may be empty)
-        
-        Returns:
-            pseudo_detection: Dict with bbox if propagating, None otherwise
-        """
+        # Update tracker and return pseudo-detection if YOLO missed, None otherwise
         # If YOLO detected, no need for fallback
         if len(yolo_detections) > 0:
             self.missing_count = 0
@@ -162,7 +113,7 @@ class FallbackTracker:
             return None
     
     def reset(self):
-        """Reset tracker state."""
+        # Reset tracker state
         self.tracker = None
         self.missing_count = 0
         self.last_bbox = None

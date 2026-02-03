@@ -2,22 +2,10 @@ import numpy as np
 from .rules import check_fall_candidate, check_lying_posture
 
 class FallStateMachine:
-    """
-    State machine for temporal smoothing of fall detection with tolerance.
-    
-    States:
-        - NORMAL: No fall detected
-        - CANDIDATE: Potential fall detected, awaiting confirmation
-        - FALL_CONFIRMED: Fall confirmed
-    """
+    # State machine for temporal smoothing of fall detection (NORMAL -> CANDIDATE -> FALL_CONFIRMED)
     
     def __init__(self, config):
-        """
-        Initialize state machine.
-        
-        Args:
-            config: Configuration dict with thresholds
-        """
+        # Initialize state machine with configuration thresholds
         self.config = config
         self.state = "NORMAL"
         
@@ -43,18 +31,7 @@ class FallStateMachine:
         self.motion_settled = False
     
     def _compute_height_drop(self, current_height):
-        """
-        Compute normalized height drop.
-        
-        Height drop = (median_baseline - current) / median_baseline
-        This detects when person collapses from standing to lying.
-        
-        Args:
-            current_height: Current bbox height
-        
-        Returns:
-            height_drop: Normalized height drop in [0, 1]
-        """
+        # Compute normalized height drop (detects when person collapses from standing to lying)
         if current_height is None:
             return 0.0
         
@@ -84,22 +61,7 @@ class FallStateMachine:
         return drop
     
     def _compute_frame_score(self, features, height_drop):
-        """
-        Compute a deterministic fall score for current frame.
-        
-        Score combines multiple indicators:
-        - Body angle (30% weight)
-        - Aspect ratio (25% weight)
-        - Height drop (25% weight)
-        - Vertical velocity (20% weight)
-        
-        Args:
-            features: Frame features dict
-            height_drop: Normalized height drop
-        
-        Returns:
-            score: Fall score in [0, 1]
-        """
+        # Compute deterministic fall score combining angle, AR, height drop, and dy velocity
         if features["bbox"] is None:
             return 0.0
         
@@ -125,22 +87,8 @@ class FallStateMachine:
         return np.clip(score, 0.0, 1.0)
     
     def _check_slow_transition(self, features):
-        """
-        Check if current lying posture is from slow transition (not a fall).
-        
-        Slow transitions (yoga, sleeping, controlled lying down) have lower dy_peak values
-        throughout the entire transition period.
-        
-        This function checks BOTH:
-        1. Short window (last 3 frames) - for immediate motion
-        2. Long window (entire history) - for overall transition speed
-        
-        Args:
-            features: Current frame features
-        
-        Returns:
-            is_slow: True if transition appears slow (NOT a fall)
-        """
+        # Check if current lying posture is from slow transition (yoga, sleeping - not a fall)
+        dy_peak_thres = self.config["dy_peak_thres"]
         slow_lie_max_dy_peak = self.config["slow_lie_max_dy_peak"]
         
         # Track dy peaks over time
@@ -149,33 +97,16 @@ class FallStateMachine:
         if len(self.dy_peak_history) > dy_long_window:
             self.dy_peak_history.pop(0)
         
-        # SHORT WINDOW CHECK: Check if recent motion is slow
+        # Check maximum dy_peak in short window
         if len(self.dy_peak_history) >= self.config["dy_short_window"]:
-            max_dy_peak_short = max(self.dy_peak_history[-self.config["dy_short_window"]:])
-            
-            # LONG WINDOW CHECK: Check if ALL motion throughout transition was slow
-            # This catches cases where person lies down slowly over many frames
-            max_dy_peak_all = max(self.dy_peak_history) if self.dy_peak_history else 0.0
-            
-            # If BOTH the recent peak AND the maximum ever observed are below threshold,
-            # this is a controlled slow transition, not a fall
-            if max_dy_peak_short < slow_lie_max_dy_peak and max_dy_peak_all < slow_lie_max_dy_peak:
-                return True
+            max_dy_peak = max(self.dy_peak_history[-self.config["dy_short_window"]:])
+            # If peak is below slow threshold, it's controlled motion
+            return max_dy_peak < slow_lie_max_dy_peak
         
         return False
     
     def _check_recovery(self, features):
-        """
-        Check if person has recovered from lying (false positive suppression).
-        
-        If person briefly lies down then returns upright, it's likely not a fall.
-        
-        Args:
-            features: Current frame features
-        
-        Returns:
-            recovered: True if recovery detected
-        """
+        # Check if person has recovered from lying (false positive suppression)
         recovery_window = self.config["recovery_window"]
         recovery_upright_angle_thres = self.config["recovery_upright_angle_thres"]
         recovery_ar_thres = self.config["recovery_ar_thres"]
@@ -225,17 +156,7 @@ class FallStateMachine:
         return False
     
     def _check_motion_settled(self, features):
-        """
-        Check if motion has settled after lying down.
-        
-        True falls have rapid motion that settles.
-        
-        Args:
-            features: Current frame features
-        
-        Returns:
-            settled: True if motion appears settled
-        """
+        # Check if motion has settled after lying down (true falls have rapid motion that settles)
         motion_settle_window = self.config["motion_settle_window"]
         settle_dy_abs_thres = self.config["settle_dy_abs_thres"]
         
@@ -247,21 +168,7 @@ class FallStateMachine:
         return False
     
     def update(self, features):
-        """
-        Update state machine with new frame features.
-        
-        State transitions:
-        - NORMAL -> CANDIDATE: When fall indicators detected
-        - CANDIDATE -> FALL_CONFIRMED: When lying posture sustained with impact
-        - FALL_CONFIRMED -> NORMAL: When recovery detected
-        
-        Args:
-            features: Frame features dict from compute_frame_features
-        
-        Returns:
-            state: Current state string (NORMAL, CANDIDATE, FALL_CONFIRMED)
-            score: Current fall score in [0, 1]
-        """
+        # Update state machine with new frame features, returns (state, score)
         # =========================================================
         # HANDLE MISSING DETECTIONS
         # =========================================================
@@ -294,14 +201,8 @@ class FallStateMachine:
             height_drop,
             self.config["height_drop_thres"],
             self.config["dy_fall_thres"],
-            self.config.get("impact_dy_thres", 10.0),
-            self.config.get("high_angle_thres", 65.0),
-            self.config.get("high_angle_dy_peak_thres", 8.0),
-            self.config.get("min_candidate_dy_peak", 12.0)
+            self.config.get("impact_dy_thres", 10.0)
         )
-        
-        # Check for slow transition (controlled lying down, not a fall)
-        is_slow_transition = self._check_slow_transition(features)
         
         # Check lying posture (relaxed thresholds for confirmation)
         is_lying = check_lying_posture(
@@ -353,21 +254,6 @@ class FallStateMachine:
                 height_drop_strong = self.config.get("height_drop_thres_strong", 0.3)
                 height_drop_moderate = 0.22
                 
-                # =========================================================
-                # MINIMUM IMPACT REQUIREMENT (CRITICAL FOR FALSE POSITIVE REDUCTION)
-                # ALL paths require minimum dy_peak to confirm fall
-                # This distinguishes actual falls from controlled lying down
-                # =========================================================
-                min_dy_peak_for_fall = self.config.get("min_dy_peak_for_fall", 15.0)
-                
-                # Check max dy_peak across entire dy_peak_history (not just current frame)
-                max_dy_peak_observed = dy_peak
-                if len(self.dy_peak_history) > 0:
-                    max_dy_peak_observed = max(max(self.dy_peak_history), dy_peak)
-                
-                # If no significant impact was ever observed, cannot confirm fall
-                has_sufficient_impact = max_dy_peak_observed >= min_dy_peak_for_fall
-                
                 # Relax dy threshold when height drop is present
                 effective_dy_thres = dy_peak_thres
                 if height_drop >= height_drop_moderate:
@@ -376,33 +262,17 @@ class FallStateMachine:
                 # PATH 1: Fast motion with impact
                 fast_motion = dy_peak >= effective_dy_thres
                 
-                # PATH 2: Strong height drop + sustained lying + MUST have impact
+                # PATH 2: Strong height drop + sustained lying
                 strong_height = (height_drop >= height_drop_strong and 
-                                lying_count >= self.config["confirm_frames"] and
-                                has_sufficient_impact)
+                                lying_count >= self.config["confirm_frames"])
                 
-                # PATH 3: Moderate height drop + very sustained lying + MUST have impact
+                # PATH 3: Moderate height drop + very sustained lying
                 moderate_height = (height_drop >= height_drop_moderate and 
-                                  lying_count >= self.config["confirm_frames"] + 3 and
-                                  has_sufficient_impact)
+                                  lying_count >= self.config["confirm_frames"] + 3)
                 
                 can_confirm = fast_motion or strong_height or moderate_height
                 
-                # =========================================================
-                # SLOW TRANSITION GATE (FINAL SAFETY CHECK)
-                # Block confirmation if person laid down slowly (not a fall)
-                # This prevents false positives when someone lies down normally
-                # =========================================================
-                if is_slow_transition:
-                    # Slow controlled transition - not a fall
-                    can_confirm = False
-                    print(f"[SLOW_TRANSITION] Blocked FALL confirmation: "
-                          f"max_dy_peak={max_dy_peak_observed:.1f} < min_dy_peak_for_fall={min_dy_peak_for_fall:.1f}")
-                
-                # Debug logging for state transitions
                 if can_confirm:
-                    print(f"[FALL_CONFIRMED] dy_peak={dy_peak:.1f}, max_observed={max_dy_peak_observed:.1f}, "
-                          f"threshold={min_dy_peak_for_fall:.1f}, height_drop={height_drop:.3f}")
                     self.state = "FALL_CONFIRMED"
                     self.fall_confirmed = True
                     self.score_accumulator = self.config["score_boost_confirmed"]

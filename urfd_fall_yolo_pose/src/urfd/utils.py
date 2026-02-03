@@ -4,19 +4,7 @@ import numpy as np
 import torch
 
 def compute_iou(bbox1, bbox2):
-    """
-    Compute IoU (Intersection over Union) between two bboxes.
-    
-    IoU = Area of Intersection / Area of Union
-    Range: [0, 1] where 1 = perfect overlap
-    
-    Args:
-        bbox1: First bbox [x1, y1, x2, y2]
-        bbox2: Second bbox [x1, y1, x2, y2]
-        
-    Returns:
-        iou: Intersection over Union value
-    """
+    # Compute IoU (Intersection over Union) between two bboxes, returns value in [0, 1]
     # Compute intersection coordinates
     x1_int = max(bbox1[0], bbox2[0])
     y1_int = max(bbox1[1], bbox2[1])
@@ -39,19 +27,7 @@ def compute_iou(bbox1, bbox2):
     return inter_area / union_area
 
 def compute_center_distance(bbox1, bbox2):
-    """
-    Compute normalized center distance between two bboxes.
-    
-    Distance is normalized by the max dimension of bbox1
-    to make it scale-invariant.
-    
-    Args:
-        bbox1: First bbox [x1, y1, x2, y2]
-        bbox2: Second bbox [x1, y1, x2, y2]
-        
-    Returns:
-        distance: Normalized Euclidean distance
-    """
+    # Compute normalized center distance between two bboxes (scale-invariant)
     # Compute centers
     c1 = np.array([(bbox1[0] + bbox1[2]) / 2, (bbox1[1] + bbox1[3]) / 2])
     c2 = np.array([(bbox2[0] + bbox2[2]) / 2, (bbox2[1] + bbox2[3]) / 2])
@@ -67,19 +43,7 @@ def compute_center_distance(bbox1, bbox2):
     return np.linalg.norm(c1 - c2) / normalize_factor
 
 def validate_config(config):
-    """
-    Validate configuration for required keys and reasonable values.
-    
-    Checks:
-    - All required keys are present
-    - Threshold values are within valid ranges
-    
-    Args:
-        config: Dict with configuration parameters
-    
-    Raises:
-        ValueError: If config is invalid
-    """
+    # Validate configuration for required keys and reasonable threshold values
     required_keys = [
         "yolo_model", "imgsz", "conf_thres", "iou_thres", "keypoint_conf_thres",
         "track_iou_thres", "track_center_dist_thres", "track_max_missing",
@@ -114,15 +78,7 @@ def validate_config(config):
     print("Config validation passed.")
 
 def load_config(config_path):
-    """
-    Load configuration from YAML file.
-    
-    Args:
-        config_path: Path to YAML config file
-    
-    Returns:
-        config: Dict with configuration parameters
-    """
+    # Load configuration from YAML file and validate
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
     
@@ -139,15 +95,7 @@ def load_config(config_path):
     return config
 
 def set_seed(seed):
-    """
-    Set random seeds for reproducibility.
-    
-    Sets seeds for: random, numpy, torch (CPU + CUDA)
-    Also enables deterministic mode for CUDA.
-    
-    Args:
-        seed: Random seed value
-    """
+    # Set random seeds for reproducibility (random, numpy, torch CPU+CUDA)
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)

@@ -1,6 +1,4 @@
-"""
-Health Check Endpoints
-"""
+# Health Check Endpoints
 from fastapi import APIRouter
 from app.ws.connection_manager import manager
 from app.core.config import get_settings
@@ -12,10 +10,7 @@ settings = get_settings()
 
 @router.get("/health")
 async def health_check():
-    """
-    Basic health check endpoint.
-    Returns server status and active connections count.
-    """
+    # Basic health check - returns server status and active connections count
     total_connections = sum(
         len(room["cameras"]) + len(room["receivers"])
         for room in manager.rooms.values()
@@ -30,10 +25,7 @@ async def health_check():
 
 @router.get("/version")
 async def version_info():
-    """
-    System version information.
-    Returns API version, Python version, PyTorch version, and config details.
-    """
+    # System version information (API, Python, PyTorch, config)
     return {
         "version": "1.0.0",
         "python": sys.version.split()[0],
@@ -49,9 +41,7 @@ async def version_info():
 
 @router.get("/rooms")
 async def list_rooms():
-    """
-    List all active rooms with connection counts.
-    """
+    # List all active rooms with connection counts
     return {
         "rooms": [
             {

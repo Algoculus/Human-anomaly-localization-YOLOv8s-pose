@@ -11,25 +11,7 @@ BORDER_MARGIN = 8
 
 def compute_frame_features(detection, keypoint_conf_thres, dy_window, history, 
                            track_id=-1, frame_idx=0, image_size=None):
-    """
-    Compute features for a single track/detection.
-    
-    Args:
-        detection: Standard detection dict with keys 'bbox', 'keypoints', etc.
-        keypoint_conf_thres: Minimum confidence threshold for keypoints
-        dy_window: Number of frames to look back for dy computation
-        history: List of previous frame features for this track
-        track_id: ID of the person track
-        frame_idx: Current frame index
-        image_size: Tuple of (width, height) for border integrity check
-        
-    Returns:
-        features: Dict containing computed features including:
-            - track_id, bbox, center_y, height, width
-            - bbox_aspect_ratio, body_angle_deg
-            - dy, dy_velocity, dy_peak
-            - feature_valid, is_touching_border
-    """
+    # Compute features for a single track/detection (bbox, angle, dy, etc.)
     # Initialize default feature values
     features = {
         "track_id": track_id,

@@ -1,6 +1,4 @@
-"""
-WebSocket Router
-"""
+# WebSocket Router
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.ws.connection_manager import manager
 
@@ -8,15 +6,7 @@ router = APIRouter()
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """
-    Main WebSocket endpoint for camera and receiver connections.
-    
-    Protocol:
-    1. Client connects
-    2. Client sends registration: {"type": "register", "role": "camera"|"receiver", "deviceId": "...", "roomId": "..."}
-    3. Camera sends frames: {"type": "frame", "roomId": "...", "frameId": 123, "ts": ..., "data": "<base64>"}
-    4. Server sends telemetry to camera and alarms to receivers
-    """
+    # Main WebSocket endpoint for camera/receiver connections with frame processing
     
     registered = False
     role = None

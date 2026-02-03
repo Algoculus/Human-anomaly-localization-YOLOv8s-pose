@@ -2,45 +2,21 @@ import numpy as np
 from src.urfd.utils import compute_iou, compute_center_distance
 
 class MultiPersonTracker:
-    """
-    Multi-person tracker using greedy IoU-based assignment.
-    
-    Maintains track identities across frames using a combination of:
-    - IoU (Intersection over Union) for spatial overlap
-    - Center distance for motion prediction
-    """
+    # Multi-person tracker using greedy IoU-based assignment with velocity prediction
     
     def __init__(self, config):
-        """
-        Initialize tracker with config.
-        
-        Args:
-            config: Configuration dict with tracking parameters
-        """
+        # Initialize tracker with config parameters
         self.config = config
         self.tracks = {}       # {track_id: track_data}
         self.next_track_id = 0
     
     def reset(self):
-        """Reset tracker state."""
+        # Reset tracker state
         self.tracks = {}
         self.next_track_id = 0
     
     def _compute_fall_likelihood_score(self, bbox, keypoints, keypoint_conf_thres):
-        """
-        Compute a fall-likelihood proxy score for re-initialization.
-        
-        Higher score = more likely to be fallen person.
-        Used to prioritize tracking of potentially fallen individuals.
-        
-        Args:
-            bbox: Bounding box [x1, y1, x2, y2]
-            keypoints: Keypoints array (17, 3)
-            keypoint_conf_thres: Keypoint confidence threshold
-            
-        Returns:
-            score: Fall likelihood score in [0, 1]
-        """
+        # Compute a fall-likelihood proxy score for re-initialization (higher = more likely fallen)
         x1, y1, x2, y2 = bbox
         w = x2 - x1
         h = y2 - y1
@@ -81,22 +57,7 @@ class MultiPersonTracker:
         return 0.4 * ar_score + 0.3 * y_score + 0.3 * angle_score
     
     def update(self, detections, keypoint_conf_thres, frame_idx):
-        """
-        Update tracker with new detections.
-        
-        Algorithm:
-        1. If no detections: increment missing count for all tracks
-        2. If no tracks: create new tracks for all detections
-        3. Otherwise: compute cost matrix and perform greedy matching
-        
-        Args:
-            detections: List of detection dicts
-            keypoint_conf_thres: Keypoint confidence threshold
-            frame_idx: Current frame index
-            
-        Returns:
-            matches: Dict of {track_id: detection_index}
-        """
+        # Update tracker with new detections, returns dict of {track_id: detection_index}
         # =========================================================
         # HANDLE NO DETECTIONS
         # =========================================================

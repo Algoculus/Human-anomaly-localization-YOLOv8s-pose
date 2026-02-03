@@ -22,6 +22,7 @@ backend/
 ## 🚀 Getting Started
 
 ### Prerequisites
+
 - Python 3.10+
 - Conda (recommended)
 
@@ -43,10 +44,10 @@ pip install fastapi uvicorn websockets ultralytics opencv-python
 
 ```bash
 # From web/backend directory
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 9000
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-The server will start on `http://127.0.0.1:9000`.
+The server will start on `http://127.0.0.1:8000`.
 
 ## 🔌 API Endpoints
 
@@ -56,23 +57,26 @@ The server will start on `http://127.0.0.1:9000`.
 ## 📡 WebSocket Protocol
 
 ### Messages sent by Client (Camera)
+
 ```json
 {
-  "type": "register",
-  "role": "camera",
-  "roomId": "room-1",
-  "deviceId": "cam-01"
+    "type": "register",
+    "role": "camera",
+    "roomId": "room-1",
+    "deviceId": "cam-01"
 }
 ```
+
 ```json
 {
-  "type": "frame",
-  "data": "<base64_encoded_image>",
-  "ts": 1234567890
+    "type": "frame",
+    "data": "<base64_encoded_image>",
+    "ts": 1234567890
 }
 ```
 
 ### Messages sent by Server
+
 ```json
 {
   "type": "telemetry",

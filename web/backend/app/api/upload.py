@@ -78,16 +78,7 @@ async def upload_video(
 
 @router.get("/{job_id}")
 async def get_job_status(job_id: str):
-    """
-    Get processing status for an upload job.
-    
-    Returns:
-    - status: "queued" | "processing" | "completed" | "failed"
-    - progress: 0-100 (percentage)
-    - outputUrl: URL to download processed video (if completed)
-    - metricsUrl: URL to download metrics JSON (if completed)
-    - error: Error message (if failed)
-    """
+    # Get processing status for an upload job (queued/processing/completed/failed)
     
     job_dir = settings.artifact_dir / "videos" / job_id
     meta_path = job_dir / "job.json"
@@ -106,16 +97,7 @@ async def get_job_status(job_id: str):
     return job_meta
 
 async def process_video_job(job_id: str, input_path: Path, job_dir: Path):
-    """
-    Background task to process uploaded video.
-    
-    Steps:
-    1. Update status to "processing"
-    2. Run infer_sequence.py with core AI
-    3. Generate overlay video
-    4. Compute metrics
-    5. Update status to "completed" or "failed"
-    """
+    # Background task to process uploaded video through core AI
     
     meta_path = job_dir / "job.json"
     

@@ -9,12 +9,7 @@ plt.rcParams['figure.figsize'] = (10, 6)
 plt.rcParams['font.size'] = 11
 
 def create_plots(output_dir):
-    """
-    Create visualization plots for evaluation results.
-    
-    Args:
-        output_dir: Directory containing metrics.json and to save plots
-    """
+    # Create visualization plots for evaluation results
     output_dir = Path(output_dir)
     plots_dir = output_dir / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)

@@ -33,6 +33,7 @@ frontend/
 ## 🚀 Getting Started
 
 ### Prerequisites
+
 - Node.js 18.x or higher
 - npm or yarn
 
@@ -52,24 +53,27 @@ npm install
 # Start development server
 npm run dev
 ```
-The application will operate at `http://localhost:3000`.
+
+The application will operate at `http://localhost:5173`.
 
 ## 🖥️ Key Features
 
 ### Camera Page (`/camera`)
+
 - **Webcam Access**: Captures video from local webcam.
 - **WebSocket Streaming**: Sends video frames to the backend (`ws://localhost:9000/ws`).
 - **Telemetry Overlay**: Receives inference results (bounding boxes, keypoints, state) and renders them on top of the video feed.
 - **Visuals**:
-  - **Green**: Normal State
-  - **Yellow**: Candidate State
-  - **Red**: Fall Confirmed
-  - **Skeleton**: Visualizes pose estimation keypoints and connections.
+    - **Green**: Normal State
+    - **Yellow**: Candidate State
+    - **Red**: Fall Confirmed
+    - **Skeleton**: Visualizes pose estimation keypoints and connections.
 
 ### Receiver Page (`/receiver`)
+
 - **Dashboard**: Monitors alarms from connected cameras.
 - **Real-time Alerts**: Shows immediate notifications when a fall is detected.
 
 ## 🤝 Backend Connection
 
-Ensure the FastAPI backend is running on port `9000` before using the frontend. The WebSocket connection string is hardcoded to `ws://localhost:9000/ws` in this demo version.
+Ensure the FastAPI backend is running on port `8000` before using the frontend. The WebSocket connection string is hardcoded to `ws://localhost:8000/ws` in this demo version.

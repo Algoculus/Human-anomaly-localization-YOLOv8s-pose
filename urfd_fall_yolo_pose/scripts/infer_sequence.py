@@ -15,13 +15,7 @@ from src.urfd.overlay import create_overlay_video
 from src.urfd.utils import load_config, set_seed
 
 def infer_sequence(seq_path, config_path):
-    """
-    Run inference on a single URFD sequence.
-    
-    Args:
-        seq_path: Path to sequence folder
-        config_path: Path to config YAML file
-    """
+    # Run inference on a single URFD sequence
     config = load_config(config_path)
     set_seed(config["seed"])
     

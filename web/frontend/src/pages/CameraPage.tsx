@@ -103,7 +103,7 @@ export default function CameraPage() {
       }
 
       // Connect WebSocket
-      const ws = new WebSocket(`ws://localhost:9000/ws`);
+      const ws = new WebSocket(`ws://localhost:8000/ws`);
 
       ws.onopen = () => {
         console.log("WebSocket connected");
