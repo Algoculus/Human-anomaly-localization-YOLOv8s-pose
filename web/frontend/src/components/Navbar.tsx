@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from "react-router-dom";
-import { Activity, Video, Upload, Bell } from "lucide-react";
+import { Activity, Video, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ModeToggle } from "./mode-toggle";
 
@@ -13,7 +13,6 @@ export default function Navbar() {
     { name: "Dashboard", path: "/", icon: Activity },
     { name: "Camera", path: "/camera", icon: Video },
     { name: "Receiver", path: "/receiver", icon: Bell },
-    { name: "Upload", path: "/upload", icon: Upload },
   ];
 
   return (

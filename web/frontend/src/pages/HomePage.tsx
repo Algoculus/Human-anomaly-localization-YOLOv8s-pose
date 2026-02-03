@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Camera, Users, Upload, ArrowRight, Cpu, Server } from "lucide-react";
+import { Camera, Users, ArrowRight, Cpu, Server } from "lucide-react";
 import { motion } from "framer-motion";
 import {
   Card,
@@ -74,7 +74,7 @@ export default function HomePage() {
         </motion.div>
 
         {/* Feature Cards */}
-        <motion.div variants={containerVariants} className="grid md:grid-cols-3 gap-8">
+        <motion.div variants={containerVariants} className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
           {/* Camera Mode */}
           <motion.div variants={itemVariants} whileHover={{ y: -5 }} className="h-full">
             <Card className="h-full flex flex-col overflow-hidden border-2 border-border/50 bg-card/50 backdrop-blur-sm hover:border-cyan-500/50 hover:shadow-[0_0_40px_-10px_rgba(6,182,212,0.3)] transition-all duration-300">
@@ -115,29 +115,6 @@ export default function HomePage() {
                 <Link to="/receiver">
                   <Button variant="outline" className="w-full border-red-500/20 text-red-500 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/30">
                     Open Receiver <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
-                </Link>
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          {/* Upload Mode */}
-          <motion.div variants={itemVariants} whileHover={{ y: -5 }} className="h-full">
-            <Card className="h-full flex flex-col overflow-hidden border-2 border-border/50 bg-card/50 backdrop-blur-sm hover:border-purple-500/50 hover:shadow-[0_0_40px_-10px_rgba(168,85,247,0.3)] transition-all duration-300">
-              <CardHeader className="text-center pb-2">
-                <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-500/20 to-pink-600/20 flex items-center justify-center mb-4 border border-purple-500/20 group-hover:border-purple-500/50 transition-colors">
-                  <Upload className="w-8 h-8 text-purple-500" />
-                </div>
-                <CardTitle className="text-xl font-bold">Video Upload</CardTitle>
-                <CardDescription>Offline batch processing</CardDescription>
-              </CardHeader>
-              <CardContent className="flex-1 flex flex-col justify-between pt-4">
-                <p className="text-sm text-muted-foreground text-center mb-6">
-                  Upload pre-recorded video files for detailed analysis and performance metrics generation.
-                </p>
-                <Link to="/upload">
-                  <Button variant="outline" className="w-full border-purple-500/20 text-purple-500 hover:text-purple-400 hover:bg-purple-500/10 hover:border-purple-500/30">
-                    Upload File <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
                 </Link>
               </CardContent>
