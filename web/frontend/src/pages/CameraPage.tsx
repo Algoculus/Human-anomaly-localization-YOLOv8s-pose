@@ -29,8 +29,8 @@ export default function CameraPage() {
   const { toast } = useToast();
   const [isStreaming, setIsStreaming] = useState(false);
   const [deviceId] = useState(`camera-${Date.now()}`);
+  const [fps, setFps] = useState(15);
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
-  const fps = 15; // Fixed FPS by default
 
   const wsRef = useRef<WebSocket | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -52,7 +52,6 @@ export default function CameraPage() {
     };
   }, []);
 
-  // Loop for continuous overlay rendering
   useEffect(() => {
     if (!isStreaming) return;
 
@@ -69,6 +68,27 @@ export default function CameraPage() {
       }
     };
   }, [isStreaming]);
+
+  useEffect(() => {
+    if (isStreaming && wsRef.current) {
+      if (streamIntervalRef.current) {
+        clearInterval(streamIntervalRef.current);
+      }
+
+      streamIntervalRef.current = window.setInterval(() => {
+        if (wsRef.current) {
+          sendFrame(wsRef.current);
+        }
+      }, 1000 / fps);
+    }
+
+    return () => {
+      if (streamIntervalRef.current) {
+        clearInterval(streamIntervalRef.current);
+        streamIntervalRef.current = null;
+      }
+    };
+  }, [isStreaming, fps]);
 
   const startStreaming = async () => {
     try {
@@ -104,11 +124,6 @@ export default function CameraPage() {
         );
 
         setIsStreaming(true);
-
-        // Start sending frames
-        streamIntervalRef.current = window.setInterval(() => {
-          sendFrame(ws);
-        }, 1000 / fps);
       };
 
       ws.onmessage = (event) => {
@@ -472,35 +487,58 @@ export default function CameraPage() {
         </div>
 
         <div className="space-y-4 md:space-y-6">
-          {!isStreaming && (
-            <Card className="border-2 border-border bg-card">
-              <CardHeader className="border-b-2 border-border">
-                <CardTitle className="text-lg text-card-foreground font-bold uppercase">
-                  Configuration
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4 pt-6">
-                <div className="p-4 bg-blue-500/10 border-2 border-blue-500/30">
-                  <Label className="text-sm font-bold text-blue-400 uppercase">
-                    Room ID
-                  </Label>
-                  <p className="text-sm text-blue-300 mt-1 font-mono">
-                    {FIXED_ROOM_ID}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground font-medium">
-                    Device ID
-                  </Label>
-                  <Input
-                    value={deviceId}
-                    disabled
-                    className="font-mono text-sm bg-muted border-2 border-border text-muted-foreground mt-2"
+          <Card className="border-2 border-border bg-card">
+            <CardHeader className="border-b-2 border-border">
+              <CardTitle className="text-lg text-card-foreground font-bold uppercase">
+                Configuration
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-6">
+              <div className="p-4 bg-blue-500/10 border-2 border-blue-500/30">
+                <Label className="text-sm font-bold text-blue-400 uppercase">
+                  Room ID
+                </Label>
+                <p className="text-sm text-blue-300 mt-1 font-mono">
+                  {FIXED_ROOM_ID}
+                </p>
+              </div>
+              
+              {/* FPS Control */}
+              <div>
+                <Label className="text-muted-foreground font-medium flex justify-between">
+                  <span>Target FPS</span>
+                  <span className="font-mono text-blue-400 bg-blue-500/10 px-2 rounded">
+                    {fps} FPS
+                  </span>
+                </Label>
+                <div className="flex items-center gap-4 mt-3">
+                  <input
+                    type="range"
+                    min="1"
+                    max="30"
+                    step="1"
+                    value={fps}
+                    onChange={(e) => setFps(Number(e.target.value))}
+                    className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-400 transition-all"
                   />
                 </div>
-              </CardContent>
-            </Card>
-          )}
+                <p className="text-xs text-muted-foreground mt-2">
+                  Adjust frame transmission rate (1-30 FPS)
+                </p>
+              </div>
+
+              <div>
+                <Label className="text-muted-foreground font-medium">
+                  Device ID
+                </Label>
+                <Input
+                  value={deviceId}
+                  disabled
+                  className="font-mono text-sm bg-muted border-2 border-border text-muted-foreground mt-2"
+                />
+              </div>
+            </CardContent>
+          </Card>
 
           {isStreaming && priorityTrack && (
             <Card className="border-2 border-blue-500/30 bg-card animate-in slide-in-from-right duration-500">
