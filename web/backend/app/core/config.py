@@ -1,6 +1,7 @@
 # Configuration management with Pydantic Settings
 from typing import List
 from functools import lru_cache
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -27,13 +28,16 @@ class Settings(BaseSettings):
     ws_ping_timeout: int = 10
     
     # Artifacts
-    artifact_dir: str = "./artifacts"
+    artifact_dir: Path = Path("./artifacts")
     max_upload_size: int = 100 * 1024 * 1024  # 100MB
     
     # Core AI
-    core_config_path: str = "../../urfd_fall_yolo_pose/configs/default.yaml"
-    yolo_model_path: str = "../../urfd_fall_yolo_pose/yolov8s-pose.pt"
-    core_scripts_dir: str = "../../urfd_fall_yolo_pose/scripts"
+    # Use realtime.yaml for WebSocket streaming (15 FPS) - thresholds scaled for lower FPS
+    # Use default.yaml for video file processing (25 FPS)
+    core_config_path: Path = Path("../../urfd_fall_yolo_pose/configs/realtime.yaml")
+    core_config_path_offline: Path = Path("../../urfd_fall_yolo_pose/configs/default.yaml")
+    yolo_model_path: Path = Path("../../urfd_fall_yolo_pose/yolov8s-pose.pt")
+    core_scripts_dir: Path = Path("../../urfd_fall_yolo_pose/scripts")
     
     # Logging
     log_level: str = "INFO"

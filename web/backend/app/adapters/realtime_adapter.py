@@ -3,28 +3,29 @@
 
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 import cv2
 
 # Import core AI components (ZERO modifications)
 from src.urfd.yolo_pose import YOLOPoseDetector
 from src.urfd.tracking import MultiPersonTracker
-from src.urfd.features import compute_frame_features, FeatureBuffer
+from src.urfd.features import compute_frame_features
 from src.urfd.smoothing import FallStateMachine
 from src.urfd.utils import load_config, validate_config, set_seed
 
 class RealtimeSessionState:
-    """Maintains state for a single real-time camera session."""
+    # Maintains state for a single real-time camera session.
+    # Reuses core AI classes without modification.
     
-    def __init__(self, config_path: str):
-        """Initialize session with core AI components."""
-        # Load and validate config
-        self.config = load_config(config_path)
+    def __init__(self, config_path: Union[str, Path]):
+        # Initialize session with core AI components
+        # Load and validate config (convert Path to str if needed)
+        self.config = load_config(str(config_path))
         validate_config(self.config)
         set_seed(self.config["seed"])
         
-        # Initialize detector
+        # Initialize detector (shared across sessions if needed)
         self.detector = YOLOPoseDetector(
             model_path=self.config["yolo_model"],
             imgsz=self.config["imgsz"],
@@ -39,9 +40,9 @@ class RealtimeSessionState:
         # Initialize tracker
         self.tracker = MultiPersonTracker(self.config)
         
-        # Per-track state (using FeatureBuffer instead of history list)
-        self.state_machines: Dict[int, FallStateMachine] = {}
-        self.feature_buffers: Dict[int, FeatureBuffer] = {}
+        # Per-track state
+        self.state_machines = {} # tid -> FallStateMachine
+        self.histories = {}      # tid -> list of features
         
         # Frame counter
         self.frame_count = 0
@@ -51,19 +52,28 @@ class RealtimeSessionState:
         self.alarm_cooldown = 30  # frames
     
     def process_frame(self, frame: np.ndarray) -> Dict:
-        """Process single frame through core AI pipeline.
+        # Process single frame through core AI pipeline.
+        # Returns telemetry + alarm status.
+        #
+        # Args:
+        #     frame: RGB numpy array (H, W, 3)
+        #
+        # Returns:
+        #     {
+        #         "frameId": int,
+        #         "tracks": [
+        #             {
+        #                 "id": int,
+        #                 "state": str,
+        #                 "score": float,
+        #                 "bbox": [x1, y1, x2, y2],
+        #                 "keypoints": [...]
+        #             }, ...
+        #         ],
+        #         "alarm": bool,  # True if NEW alarm triggered
+        #         "snapshotFrame": np.ndarray or None
+        #     }
         
-        Args:
-            frame: RGB numpy array (H, W, 3)
-            
-        Returns:
-            {
-                "frameId": int,
-                "tracks": [...],
-                "alarm": bool,
-                "snapshotFrame": np.ndarray or None
-            }
-        """
         # Run YOLO detection
         detections = self.detector.detect(frame)
         
@@ -73,9 +83,6 @@ class RealtimeSessionState:
         current_tracks_data = []
         max_frame_score = 0.0
         alarm_triggered = False
-        
-        # Image size for feature computation
-        image_size = (frame.shape[1], frame.shape[0])
         
         # Process all active tracks
         active_tids = list(self.tracker.tracks.keys())
@@ -89,54 +96,43 @@ class RealtimeSessionState:
             # Initialize track state if new
             if tid not in self.state_machines:
                 self.state_machines[tid] = FallStateMachine(self.config)
-                self.feature_buffers[tid] = FeatureBuffer(max_size=self.config.get("buffer_size", 60))
+                self.histories[tid] = []
                 
-            # Compute features using NEW API
+            # Compute features
             features = compute_frame_features(
                 det,
-                self.config,
-                self.feature_buffers[tid],
+                self.config["keypoint_conf_thres"],
+                self.config["dy_window"],
+                self.histories[tid],
                 track_id=tid,
-                frame_idx=self.frame_count,
-                image_size=image_size
+                frame_idx=self.frame_count
             )
             
-            # Add to buffer
-            self.feature_buffers[tid].add(features)
+            self.histories[tid].append(features)
             
-            # Update state machine using NEW API - returns FallDecision
-            decision = self.state_machines[tid].update_v2(features, track_id=tid, frame_idx=self.frame_count)
+            # Update state machine
+            state, score = self.state_machines[tid].update(features)
             
-            if decision.confidence > max_frame_score:
-                max_frame_score = decision.confidence
+            if score > max_frame_score:
+                max_frame_score = score
             
             # Check for alarm
-            if decision.fsm_state == "FALL_CONFIRMED":
-                alarm_triggered = True
-            
-            # Map FSM state to frontend-friendly state names
-            state_map = {
-                "NORMAL": "NORMAL",
-                "HYPOTHESIS": "CANDIDATE",
-                "VERIFYING": "CANDIDATE",
-                "FALL_CONFIRMED": "FALL_CONFIRMED"
-            }
-            display_state = state_map.get(decision.fsm_state, decision.fsm_state)
+            if state == "FALL_CONFIRMED":
+                 alarm_triggered = True
             
             # Prepare track data
             track_data = {
                 "id": tid,
-                "state": display_state,
-                "score": float(decision.confidence),
-                "label": decision.label,
+                "state": state,
+                "score": float(score),
                 "bbox": None,
-                "keypoints": None
+                "keypoints": None,
+                "dy_peak": float(features.get("dy_peak", 0.0)),  # For debugging
+                "body_angle": float(features.get("body_angle_deg", 0.0)) if features.get("body_angle_deg") else None
             }
             
-            # Get bbox from FrameFeatures (dataclass attribute access)
-            bbox = features.bbox if hasattr(features, 'bbox') else features.get('bbox')
-            if bbox is not None:
-                x1, y1, x2, y2 = bbox
+            if features["bbox"] is not None:
+                x1, y1, x2, y2 = features["bbox"]
                 track_data["bbox"] = [int(x1), int(y1), int(x2), int(y2)]
                 
             if det and det.get("keypoints") is not None:
@@ -179,7 +175,7 @@ class RealtimeSessionState:
 class RealtimeSessionManager:
     # Manages multiple real-time sessions (one per camera/room)
     
-    def __init__(self, config_path: str):
+    def __init__(self, config_path: Union[str, Path]):
         self.config_path = config_path
         self.sessions: Dict[str, RealtimeSessionState] = {}
     

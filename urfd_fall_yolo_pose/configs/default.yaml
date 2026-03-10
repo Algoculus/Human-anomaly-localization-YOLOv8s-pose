@@ -1,17 +1,4 @@
-# =========================================================
-# Fall Detection Configuration
-# Hypothesis→Verification Dual-Tier Architecture
-# =========================================================
-
-# Detection Mode
-# - 'demo': Early decision for short clips (~0.2-0.5s trigger)
-# - 'realtime': Full verification with confirmation buffer (~0.5-2s)
-detection_mode: 'realtime'
-fps: 30 # Video FPS for time-based normalization
-
-# =========================================================
 # YOLOv8 Pose Model Configuration
-# =========================================================
 yolo_model: 'yolov8s-pose.pt'
 imgsz: 640
 conf_thres: 0.25
@@ -24,9 +11,6 @@ gamma: 1.3
 clahe_clip: 2.0
 clahe_grid: 8
 
-# =========================================================
-# Tracking Configuration
-# =========================================================
 # Primary Person Tracking
 track_iou_thres: 0.3
 track_center_dist_thres: 1.5
@@ -36,99 +20,84 @@ track_max_missing: 8
 fallback_track_max_gap: 6
 fallback_tracker_type: 'kcf'
 
-# =========================================================
-# Hypothesis Trigger (Tier 1)
-# Fast detection for short clips
-# =========================================================
-hypothesis:
-  early_score_thres: 0.30 # Minimum score to enter HYPOTHESIS state
-  early_score_high: 0.65 # High confidence for immediate FALL (demo mode)
-  early_frames: 3 # Max frames for early decision (~0.1s at 30fps)
+# Fall Detection Rule Thresholds
+angle_thres: 55.0
+ar_thres: 1.15
+confirm_angle_thres: 48.0
+confirm_ar_thres: 1.35
+height_drop_thres: 0.18
+height_drop_thres_strong: 0.28
 
-# =========================================================
-# Verification (Tier 2 - realtime mode)
-# Confirmation buffer for false positive reduction
-# =========================================================
-verification:
-  hypothesis_threshold: 0.35 # Balanced threshold
-  verify_score_thres: 0.45 # Confirmation threshold (balanced precision/recall)
-  confirm_frames: 8 # Frames to hold state before alert
-  confirm_window: 20 # Window size for confirmation check
-  min_confirm_duration_frames: 1 # Min frames above threshold
-  post_motion_thres: 3.5 # Motion settling threshold
+# Dynamic Fall Detection
+dy_fall_thres: 10.0
+dy_window: 5
+dy_short_window: 3
+dy_long_window: 10
+dy_peak_thres: 8.0
 
-  # Velocity Gating (Anti-Slow-Lying)
-  enable_velocity_gate: false # Disabled to improve recall on slow falls
-  min_fall_velocity: 0.05 # Minimum velocity if enabled
+# Border integrity check
+border_margin: 8
 
-# =========================================================
-# Feature Thresholds (normalized values)
-# =========================================================
-thresholds:
-  height_drop_norm: 0.15 # 15% height reduction triggers
-  width_increase: 0.25 # 25% width increase indicates lying
-  dy_norm_peak: 0.08 # 8% of baseline_h per frame
-  dy_acc_thres: 0.03 # Acceleration threshold
-  dH_thres: 0.05 # Frame-to-frame height change
-  dW_thres: 0.05 # Frame-to-frame width change
+# Impact verification for static posture path (raised to reduce false positives from normal lying)
+impact_dy_thres: 10.0
 
-# =========================================================
-# Feature Scoring Weights
-# =========================================================
-weights:
-  hw_ratio: 5.0 # Lying posture indicator (width/height)
-  height_ratio: -10.0 # Height reduction penalty
-  floor_distance: 4.0 # Proximity to floor
-  variance_boost: 3.0 # Motion indicator
-  border_penalty: -3.0 # Edge detection penalty
-  upward_penalty: -10.0 # Standing up motion penalty
-  downward_boost: 2.0 # Falling motion boost
-  intercept: -9.0 # Baseline offset
+# High-angle threshold (very horizontal posture indicator)
+high_angle_thres: 65.0
 
-# Variance and quality thresholds
-variance_window: 10 # Frames for position variance
-variance_threshold: 10.0 # High variance = movement
+# Minimum dy_peak required for high-angle path (distinguish from controlled lying)
+high_angle_dy_peak_thres: 8.0
 
-# =========================================================
-# Baseline Computation
-# =========================================================
-baseline_window: 30 # Frames for stable baseline (~1s at 30fps)
-stable_motion_thres: 2.0 # dy below this = stable frame
+# Minimum dy_peak to trigger CANDIDATE for PATH 2 & 3 (prevent normal lying)
+# Normal controlled lying: dy_peak typically 3-10
+# Actual falls: dy_peak typically > 15-20
+min_candidate_dy_peak: 12.0
 
-# =========================================================
-# Temporal Smoothing
-# =========================================================
+# Height Drop Analysis
+height_drop_short_window: 5
+
+# Temporal Smoothing Parameters
 cand_enter_frames: 2
+cand_tolerance: 1
 confirm_frames: 3
-confirm_window: 14
-height_window: 16
+confirm_tolerance: 2
+confirm_window: 10
+height_window: 12
 
-# Missing detection
+# Missing Detection Handling
 max_missing_streak: 5
 
-# =========================================================
 # Recovery Detection
-# =========================================================
-recovery_window: 13
-recovery_upright_angle_thres: 48.0
-recovery_ar_thres: 1.12
+recovery_window: 10
+recovery_upright_angle_thres: 55.0
+recovery_ar_thres: 1.25
+recovery_height_recover_ratio: 0.70
 
-# =========================================================
+# Motion Settling
+motion_settle_window: 8
+settle_dy_abs_thres: 10.0
+
+# Slow Transition Gate (controlled lying down detection)
+# If max dy_peak in short window is below this threshold, it's considered slow transition
+# Actual falls typically have dy_peak > 20-30, controlled lying usually < 15
+slow_lie_max_dy_peak: 15.0
+
+# Minimum dy_peak ever observed to confirm a fall (prevents false positives from normal lying)
+# This is the CRITICAL threshold that distinguishes falls from controlled lying
+# Real falls have rapid uncontrolled descent with dy_peak typically > 18-25
+# Normal lying down has controlled descent with dy_peak typically < 12-15
+min_dy_peak_for_fall: 18.0
+
 # Score Parameters
-# =========================================================
 score_decay: 0.85
-min_confirm_duration_frames: 1
+score_boost_candidate: 0.05
+score_boost_confirmed: 1.0
 
-# =========================================================
+# Minimum consecutive FALL_CONFIRMED frames
+min_confirm_duration_frames: 2
+
 # Output Settings
-# =========================================================
 output_fps: 25
 output_dir: 'outputs'
 
-# Debug mode - adds extra visualization
-debug_overlay: true
-
-# =========================================================
 # Reproducibility
-# =========================================================
 seed: 42

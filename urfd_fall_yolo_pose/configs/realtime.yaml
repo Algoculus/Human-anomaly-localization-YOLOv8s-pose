@@ -1,0 +1,138 @@
+# Real-time Camera Configuration
+# Tuned for lower FPS (15-20 FPS) compared to offline video processing (25 FPS)
+#
+# CRITICAL: dy (vertical velocity) is measured in pixels/frame, NOT pixels/second.
+# At lower FPS, there's more time between frames, so dy values are HIGHER for the same
+# real-world speed. All dy-related thresholds must be scaled up proportionally.
+#
+# Scale factor: (reference_fps / actual_fps) = 25/15 ≈ 1.67
+
+# Reference FPS for threshold calculation
+reference_fps: 25
+actual_fps: 15
+# This gives dy_scale_factor ≈ 1.67, applied to all dy-related thresholds
+
+# YOLOv8 Pose Model Configuration
+yolo_model: 'yolov8s-pose.pt'
+imgsz: 640
+conf_thres: 0.25
+iou_thres: 0.45
+keypoint_conf_thres: 0.5
+
+# Low-light preprocessing
+preprocess_lowlight: true
+gamma: 1.3
+clahe_clip: 2.0
+clahe_grid: 8
+
+# Primary Person Tracking
+track_iou_thres: 0.3
+track_center_dist_thres: 1.5
+track_max_missing: 8
+
+# Fallback tracking
+fallback_track_max_gap: 6
+fallback_tracker_type: 'kcf'
+
+# Fall Detection Rule Thresholds (angle/AR thresholds are FPS-independent)
+angle_thres: 55.0
+ar_thres: 1.15
+confirm_angle_thres: 48.0
+confirm_ar_thres: 1.35
+height_drop_thres: 0.18
+height_drop_thres_strong: 0.28
+
+# ============================================================================
+# DYNAMIC FALL DETECTION - SCALED FOR 15 FPS
+# All dy-related thresholds scaled by 1.67 (25/15)
+# ============================================================================
+
+# Balanced value between conservative (17.0) and sensitive (12.0)
+dy_fall_thres: 15.0
+
+dy_window: 5
+dy_short_window: 3
+dy_long_window: 10
+
+# Original: 8.0 × 1.67 ≈ 13.0
+dy_peak_thres: 13.0
+
+# Border integrity check
+border_margin: 8
+
+# Impact verification for static posture path
+# Balanced value for moderate sensitivity
+impact_dy_thres: 15.0
+
+# High-angle threshold (angle is FPS-independent)
+high_angle_thres: 65.0
+
+# Minimum dy_peak for high-angle path
+# Balanced value for frontal falls
+high_angle_dy_peak_thres: 12.0
+
+# Minimum dy_peak to trigger CANDIDATE for PATH 2 & 3
+# Balanced value: not too sensitive, not too conservative
+# Controlled lying at 15 FPS: dy_peak typically 8-15
+# Actual falls at 15 FPS: dy_peak typically > 20-35
+min_candidate_dy_peak: 18.0
+
+# Height Drop Analysis
+height_drop_short_window: 5
+
+# Temporal Smoothing Parameters (frame counts - may need adjustment for FPS)
+# At 15 FPS, time windows are shorter, so we slightly increase frame counts
+cand_enter_frames: 3
+cand_tolerance: 1
+confirm_frames: 4
+confirm_tolerance: 2
+confirm_window: 12
+height_window: 15
+
+# Missing Detection Handling
+max_missing_streak: 5
+
+# Recovery Detection
+recovery_window: 12
+recovery_upright_angle_thres: 55.0
+recovery_ar_thres: 1.25
+recovery_height_recover_ratio: 0.70
+
+# Motion Settling
+motion_settle_window: 10
+# Original: 10.0 × 1.67 ≈ 17.0
+settle_dy_abs_thres: 17.0
+
+# ============================================================================
+# SLOW TRANSITION GATE - CRITICAL FOR FALSE POSITIVE REDUCTION
+# These are the most important thresholds for distinguishing falls from
+# controlled lying down at low FPS
+# ============================================================================
+
+# Slow transition detection threshold
+# At 15 FPS, controlled lying has dy_peak typically < 18-20
+# Actual falls have dy_peak typically > 24-35
+# Balanced value to block slow controlled movements
+slow_lie_max_dy_peak: 22.0
+
+# MINIMUM DY_PEAK REQUIRED TO CONFIRM FALL
+# This is THE MOST CRITICAL threshold
+# Balanced value: catches real falls while avoiding false positives
+# Real falls at 15 FPS typically show dy_peak > 25-40
+# Normal controlled lying at 15 FPS shows dy_peak typically 10-20
+min_dy_peak_for_fall: 26.0
+
+# Score Parameters
+score_decay: 0.85
+score_boost_candidate: 0.05
+score_boost_confirmed: 1.0
+
+# Minimum consecutive FALL_CONFIRMED frames
+min_confirm_duration_frames: 3
+
+# Output Settings
+output_fps: 25
+output_dir: 'outputs'
+
+# Reproducibility
+seed: 42
